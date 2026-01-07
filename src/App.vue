@@ -1,7 +1,7 @@
 <template>
-  <div />
+  <router-view />
 </template>
 
 <script setup>
-// 预留挂载点，后续按模块开发
+// 入口组件仅承载路由视图
 </script>

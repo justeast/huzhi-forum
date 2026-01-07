@@ -1,0 +1,6 @@
+/* 全局样式修复：隐藏部分浏览器（Edge/IE）的密码显示与清除按钮，避免与自定义显隐图标重复 */
+input::-ms-reveal,
+input::-ms-clear {
+  display: none;
+}
+
