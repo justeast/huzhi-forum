@@ -35,3 +35,33 @@ export const register = async (payload) => {
     throw new Error(msg);
   }
 };
+
+// 发送重置密码邮箱验证码（POST /user/pwd-reset/code/）
+// payload: { email: string }
+export const sendPwdResetCode = async (payload) => {
+  try {
+    const res = await api.post("/user/pwd-reset/code/", payload);
+    if (res?.status !== 200 || res?.data?.code !== 1) {
+      throw new Error(res?.data?.msg || "验证码发送失败");
+    }
+    return res.data;
+  } catch (error) {
+    const msg = error?.response?.data?.msg || error?.message || "验证码发送失败";
+    throw new Error(msg);
+  }
+};
+
+// 用户重置密码（POST /user/pwd-reset/）
+// payload: { email: string, code: string, new_password: string }
+export const resetPassword = async (payload) => {
+  try {
+    const res = await api.post("/user/pwd-reset/", payload);
+    if (res?.status !== 200 || res?.data?.code !== 1) {
+      throw new Error(res?.data?.msg || "密码重置失败");
+    }
+    return res.data;
+  } catch (error) {
+    const msg = error?.response?.data?.msg || error?.message || "密码重置失败";
+    throw new Error(msg);
+  }
+};

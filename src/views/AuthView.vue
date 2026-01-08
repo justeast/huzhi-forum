@@ -1,8 +1,8 @@
 <script setup>
-import { reactive, ref } from "vue";
+import { onBeforeUnmount, reactive, ref } from "vue";
 import { EyeOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
-import { login, register } from "../api/auth";
+import { login, register, resetPassword, sendPwdResetCode } from "../api/auth";
 
 // 封面图路径（同一张图用于背景与左侧图）
 const coverImage = "/auth-cover.png";
@@ -28,6 +28,112 @@ const loading = ref(false);
 const loginPwdVisible = ref(false);
 const registerPwdVisible = ref(false);
 const registerConfirmVisible = ref(false);
+
+// 右侧卡片模式：登录/注册（auth）与重置密码（reset）
+const panelMode = ref("auth");
+
+// 重置密码表单状态
+const resetForm = reactive({
+  email: "",
+  code: "",
+  newPassword: "",
+  confirmPassword: "",
+});
+
+const resetLoading = ref(false);
+const codeSending = ref(false);
+const codeLeftSeconds = ref(0);
+const resetPwdVisible = ref(false);
+const resetConfirmVisible = ref(false);
+
+let codeTimer = null;
+
+// 开始验证码倒计时（模拟 60s）
+const startCodeCountdown = () => {
+  if (codeTimer) clearInterval(codeTimer);
+  codeLeftSeconds.value = 60;
+  codeTimer = setInterval(() => {
+    codeLeftSeconds.value -= 1;
+    if (codeLeftSeconds.value <= 0) {
+      clearInterval(codeTimer);
+      codeTimer = null;
+      codeLeftSeconds.value = 0;
+    }
+  }, 1000);
+};
+
+const stopCodeCountdown = () => {
+  if (codeTimer) clearInterval(codeTimer);
+  codeTimer = null;
+  codeLeftSeconds.value = 0;
+};
+
+onBeforeUnmount(() => {
+  stopCodeCountdown();
+});
+
+// 切换到重置密码面板
+const openResetPanel = () => {
+  panelMode.value = "reset";
+  stopCodeCountdown();
+  resetForm.email = "";
+  resetForm.code = "";
+  resetForm.newPassword = "";
+  resetForm.confirmPassword = "";
+  resetPwdVisible.value = false;
+  resetConfirmVisible.value = false;
+};
+
+const backToLogin = () => {
+  panelMode.value = "auth";
+  activeTab.value = "login";
+  stopCodeCountdown();
+};
+
+const handleSendResetCode = async () => {
+  if (!resetForm.email) {
+    message.warning("请输入注册邮箱");
+    return;
+  }
+  if (codeSending.value || codeLeftSeconds.value > 0) return;
+
+  codeSending.value = true;
+  try {
+    await sendPwdResetCode({ email: resetForm.email });
+    message.success("验证码已发送");
+    startCodeCountdown();
+  } catch (error) {
+    message.error(error?.message || "验证码发送失败");
+  } finally {
+    codeSending.value = false;
+  }
+};
+
+const handleResetPassword = async () => {
+  if (!resetForm.email || !resetForm.code || !resetForm.newPassword) {
+    message.warning("请完整填写重置信息");
+    return;
+  }
+  if (resetForm.newPassword !== resetForm.confirmPassword) {
+    message.warning("两次密码不一致");
+    return;
+  }
+
+  resetLoading.value = true;
+  try {
+    await resetPassword({
+      email: resetForm.email,
+      code: resetForm.code,
+      new_password: resetForm.newPassword,
+    });
+    message.success("密码重置成功");
+    backToLogin();
+  } catch (error) {
+    message.error(error?.message || "密码重置失败");
+  } finally {
+    resetLoading.value = false;
+  }
+};
 
 // 登录提交
 const handleLogin = async () => {
@@ -89,88 +195,149 @@ const handleRegister = async () => {
         </div>
         <div class="cover" :style="{ backgroundImage: `url(${coverImage})` }"></div>
       </div>
-      <div class="panel-right">
+      <div class="panel-right" :class="{ 'is-reset': panelMode === 'reset' }">
         <div class="brand">
           <h1>乎知</h1>
           <span>QUESTIONS & ANSWERS</span>
         </div>
-        <a-tabs v-model:activeKey="activeTab" class="auth-tabs" centered>
-          <a-tab-pane key="login" tab="登录">
-            <div class="form-wrap">
-              <a-form layout="vertical" @submit.prevent>
-                <a-form-item>
-                  <a-input v-model:value="loginForm.account" placeholder="用户名或邮箱" size="large" :bordered="false"
-                    class="underline-input" />
-                </a-form-item>
-                <a-form-item>
-                  <a-input v-model:value="loginForm.password" :type="loginPwdVisible ? 'text' : 'password'"
-                    placeholder="密码" size="large" :bordered="false" class="underline-input">
-                    <template #suffix>
-                      <span class="pwd-toggle" :class="{ 'is-hidden': !loginPwdVisible }" @mousedown.prevent
-                        @click.prevent="loginPwdVisible = !loginPwdVisible">
-                        <EyeOutlined />
-                      </span>
-                    </template>
-                  </a-input>
-                </a-form-item>
-                <div class="row between">
-                  <a-checkbox v-model:checked="loginForm.remember">
-                    记住我
-                  </a-checkbox>
-                  <a-button type="link" class="link-plain" tabindex="-1">
-                    忘记密码？
+        <template v-if="panelMode === 'auth'">
+          <a-tabs v-model:activeKey="activeTab" class="auth-tabs" centered>
+            <a-tab-pane key="login" tab="登录">
+              <div class="form-wrap">
+                <a-form layout="vertical" @submit.prevent>
+                  <a-form-item>
+                    <a-input v-model:value="loginForm.account" placeholder="用户名或邮箱" size="large" :bordered="false"
+                      class="underline-input" />
+                  </a-form-item>
+                  <a-form-item>
+                    <a-input v-model:value="loginForm.password" :type="loginPwdVisible ? 'text' : 'password'"
+                      placeholder="密码" size="large" :bordered="false" class="underline-input">
+                      <template #suffix>
+                        <span class="pwd-toggle" :class="{ 'is-hidden': !loginPwdVisible }" @mousedown.prevent
+                          @click.prevent="loginPwdVisible = !loginPwdVisible">
+                          <EyeOutlined />
+                        </span>
+                      </template>
+                    </a-input>
+                  </a-form-item>
+                  <div class="row between">
+                    <a-checkbox v-model:checked="loginForm.remember">
+                      记住我
+                    </a-checkbox>
+                    <a-button type="link" class="link-plain" tabindex="-1" @click="openResetPanel">
+                      忘记密码？
+                    </a-button>
+                  </div>
+                  <a-button block type="primary" size="large" :loading="loading" class="primary-btn"
+                    @click="handleLogin">
+                    登录
                   </a-button>
-                </div>
-                <a-button block type="primary" size="large" :loading="loading" class="primary-btn" @click="handleLogin">
-                  登录
-                </a-button>
-              </a-form>
-            </div>
-          </a-tab-pane>
-          <a-tab-pane key="register" tab="注册">
-            <div class="form-wrap">
-              <a-form layout="vertical" @submit.prevent>
-                <a-form-item>
-                  <a-input v-model:value="registerForm.username" placeholder="用户名" size="large" :bordered="false"
-                    class="underline-input" />
-                </a-form-item>
-                <a-form-item>
-                  <a-input v-model:value="registerForm.email" placeholder="邮箱" size="large" :bordered="false"
-                    class="underline-input" />
-                </a-form-item>
-                <a-form-item>
-                  <a-input v-model:value="registerForm.password" :type="registerPwdVisible ? 'text' : 'password'"
-                    placeholder="密码" size="large" :bordered="false" class="underline-input">
-                    <template #suffix>
-                      <span class="pwd-toggle" :class="{ 'is-hidden': !registerPwdVisible }" @mousedown.prevent
-                        @click.prevent="registerPwdVisible = !registerPwdVisible">
-                        <EyeOutlined />
-                      </span>
-                    </template>
-                  </a-input>
-                  <div class="field-tip">密码需包含大小写字母和数字，长度至少8位</div>
-                </a-form-item>
-                <a-form-item>
-                  <a-input v-model:value="registerForm.confirmPassword"
-                    :type="registerConfirmVisible ? 'text' : 'password'" placeholder="确认密码" size="large"
-                    :bordered="false" class="underline-input">
-                    <template #suffix>
-                      <span class="pwd-toggle" :class="{ 'is-hidden': !registerConfirmVisible }" @mousedown.prevent
-                        @click.prevent="registerConfirmVisible = !registerConfirmVisible">
-                        <EyeOutlined />
-                      </span>
-                    </template>
-                  </a-input>
-                </a-form-item>
-                <a-button block type="primary" size="large" :loading="loading" class="primary-btn"
-                  @click="handleRegister">
-                  注册
-                </a-button>
-              </a-form>
-            </div>
-          </a-tab-pane>
-        </a-tabs>
-        <div class="footer">© {{ footerYear }} 乎知 Huzhi Inc.</div>
+                </a-form>
+              </div>
+            </a-tab-pane>
+            <a-tab-pane key="register" tab="注册">
+              <div class="form-wrap">
+                <a-form layout="vertical" @submit.prevent>
+                  <a-form-item>
+                    <a-input v-model:value="registerForm.username" placeholder="用户名" size="large" :bordered="false"
+                      class="underline-input" />
+                  </a-form-item>
+                  <a-form-item>
+                    <a-input v-model:value="registerForm.email" placeholder="邮箱" size="large" :bordered="false"
+                      class="underline-input" />
+                  </a-form-item>
+                  <a-form-item>
+                    <a-input v-model:value="registerForm.password" :type="registerPwdVisible ? 'text' : 'password'"
+                      placeholder="密码" size="large" :bordered="false" class="underline-input">
+                      <template #suffix>
+                        <span class="pwd-toggle" :class="{ 'is-hidden': !registerPwdVisible }" @mousedown.prevent
+                          @click.prevent="registerPwdVisible = !registerPwdVisible">
+                          <EyeOutlined />
+                        </span>
+                      </template>
+                    </a-input>
+                    <div class="field-tip">密码需包含大小写字母和数字，长度至少8位</div>
+                  </a-form-item>
+                  <a-form-item>
+                    <a-input v-model:value="registerForm.confirmPassword"
+                      :type="registerConfirmVisible ? 'text' : 'password'" placeholder="确认密码" size="large"
+                      :bordered="false" class="underline-input">
+                      <template #suffix>
+                        <span class="pwd-toggle" :class="{ 'is-hidden': !registerConfirmVisible }" @mousedown.prevent
+                          @click.prevent="registerConfirmVisible = !registerConfirmVisible">
+                          <EyeOutlined />
+                        </span>
+                      </template>
+                    </a-input>
+                  </a-form-item>
+                  <a-button block type="primary" size="large" :loading="loading" class="primary-btn"
+                    @click="handleRegister">
+                    注册
+                  </a-button>
+                </a-form>
+              </div>
+            </a-tab-pane>
+          </a-tabs>
+        </template>
+
+        <template v-else>
+          <div class="reset-tab">
+            <span>重置密码</span>
+          </div>
+          <div class="form-wrap">
+            <a-form layout="vertical" class="reset-form" @submit.prevent>
+              <a-form-item>
+                <a-input v-model:value="resetForm.email" placeholder="请输入注册邮箱" size="large" :bordered="false"
+                  class="underline-input" />
+              </a-form-item>
+              <a-form-item>
+                <a-input v-model:value="resetForm.code" placeholder="验证码" size="large" :bordered="false"
+                  class="underline-input">
+                  <template #suffix>
+                    <a-button type="link" class="code-link" :disabled="codeSending || codeLeftSeconds > 0"
+                      @mousedown.prevent @click.prevent="handleSendResetCode">
+                      {{ codeLeftSeconds > 0 ? `重新获取(${codeLeftSeconds}s)` : "获取验证码" }}
+                    </a-button>
+                  </template>
+                </a-input>
+              </a-form-item>
+              <a-form-item>
+                <a-input v-model:value="resetForm.newPassword" :type="resetPwdVisible ? 'text' : 'password'"
+                  placeholder="新密码" size="large" :bordered="false" class="underline-input">
+                  <template #suffix>
+                    <span class="pwd-toggle" :class="{ 'is-hidden': !resetPwdVisible }" @mousedown.prevent
+                      @click.prevent="resetPwdVisible = !resetPwdVisible">
+                      <EyeOutlined />
+                    </span>
+                  </template>
+                </a-input>
+                <div class="field-tip">密码需包含大小写字母和数字，长度至少8位</div>
+              </a-form-item>
+              <a-form-item>
+                <a-input v-model:value="resetForm.confirmPassword" :type="resetConfirmVisible ? 'text' : 'password'"
+                  placeholder="确认新密码" size="large" :bordered="false" class="underline-input">
+                  <template #suffix>
+                    <span class="pwd-toggle" :class="{ 'is-hidden': !resetConfirmVisible }" @mousedown.prevent
+                      @click.prevent="resetConfirmVisible = !resetConfirmVisible">
+                      <EyeOutlined />
+                    </span>
+                  </template>
+                </a-input>
+              </a-form-item>
+
+              <a-button type="link" class="link-plain back-login" @click="backToLogin">
+                返回登录
+              </a-button>
+
+              <a-button block type="primary" size="large" :loading="resetLoading" class="primary-btn"
+                @click="handleResetPassword">
+                重置
+              </a-button>
+            </a-form>
+          </div>
+        </template>
+
+        <div class="footer">&copy; {{ footerYear }} 乎知 Huzhi Inc.</div>
       </div>
     </div>
   </div>
@@ -272,11 +439,18 @@ const handleRegister = async () => {
 }
 
 .panel-right {
-  padding: 89px 56px 44px;
+  position: relative;
+  padding: 89px 56px 78px;
   display: flex;
   flex-direction: column;
   gap: 22px;
   min-height: 0;
+}
+
+.panel-right.is-reset {
+  /* 重置密码表单字段更多，整体上移避免底部按钮被裁切 */
+  padding: 44px 56px 92px;
+  gap: 14px;
 }
 
 .brand {
@@ -322,6 +496,33 @@ const handleRegister = async () => {
   background: var(--brand-color);
 }
 
+/* 重置密码标题（模拟 Tab 的样式） */
+.reset-tab {
+  position: relative;
+  text-align: center;
+  padding: 6px 0 12px;
+  margin: 0 0 10px 0;
+  border-bottom: 1px solid var(--line-color);
+}
+
+.reset-tab span {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.reset-tab::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -1px;
+  width: 44px;
+  height: 2px;
+  background: var(--brand-color);
+  transform: translateX(-50%);
+  border-radius: 2px;
+}
+
 /* 通过压缩表单间距保证注册页不需要内部滚动 */
 .auth-tabs :global(.ant-form-item) {
   margin-bottom: 12px;
@@ -331,11 +532,34 @@ const handleRegister = async () => {
   margin-bottom: 0;
 }
 
+.reset-form :global(.ant-form-item) {
+  margin-bottom: 14px;
+}
+
 .field-tip {
   margin-top: 6px;
   font-size: 12px;
   line-height: 1.2;
   color: var(--text-subtle);
+}
+
+.back-login {
+  padding: 0;
+  margin: 0 0 12px;
+}
+
+:global(.ant-btn-link.code-link) {
+  padding: 0 !important;
+  height: auto !important;
+  color: var(--brand-color) !important;
+}
+
+:global(.ant-btn-link.code-link:not(:disabled):hover) {
+  color: var(--brand-color-dark) !important;
+}
+
+:global(.ant-btn-link.code-link:disabled) {
+  color: #a0aec0 !important;
 }
 
 .form-wrap {
@@ -453,7 +677,10 @@ const handleRegister = async () => {
 }
 
 .footer {
-  margin-top: auto;
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 22px;
   color: #a0aec0;
   font-size: 12px;
   text-align: center;
