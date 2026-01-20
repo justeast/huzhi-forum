@@ -1,15 +1,10 @@
-import axios from "axios";
-
-// 基础请求实例：后端基地址在 .env 中配置 VITE_API_BASE
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE || "",
-});
+import { http } from "./http";
 
 // 登录（POST /user/login/）
 // payload: { account: string, password: string }
 export const login = async (payload) => {
   try {
-    const res = await api.post("/user/login/", payload);
+    const res = await http.post("/user/login/", payload);
     if (res?.status !== 200 || res?.data?.code !== 1) {
       throw new Error(res?.data?.msg || "登录失败");
     }
@@ -25,7 +20,7 @@ export const login = async (payload) => {
 // payload: { username: string, email: string, password: string }
 export const register = async (payload) => {
   try {
-    const res = await api.post("/user/register/", payload);
+    const res = await http.post("/user/register/", payload);
     if (res?.status !== 200 || res?.data?.code !== 1) {
       throw new Error(res?.data?.msg || "注册失败");
     }
@@ -40,7 +35,7 @@ export const register = async (payload) => {
 // payload: { email: string }
 export const sendPwdResetCode = async (payload) => {
   try {
-    const res = await api.post("/user/pwd-reset/code/", payload);
+    const res = await http.post("/user/pwd-reset/code/", payload);
     if (res?.status !== 200 || res?.data?.code !== 1) {
       throw new Error(res?.data?.msg || "验证码发送失败");
     }
@@ -55,7 +50,7 @@ export const sendPwdResetCode = async (payload) => {
 // payload: { email: string, code: string, new_password: string }
 export const resetPassword = async (payload) => {
   try {
-    const res = await api.post("/user/pwd-reset/", payload);
+    const res = await http.post("/user/pwd-reset/", payload);
     if (res?.status !== 200 || res?.data?.code !== 1) {
       throw new Error(res?.data?.msg || "密码重置失败");
     }

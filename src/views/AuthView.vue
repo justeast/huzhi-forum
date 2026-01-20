@@ -1,12 +1,16 @@
 <script setup>
 import { onBeforeUnmount, reactive, ref } from "vue";
+import { useRouter } from "vue-router";
 import { EyeOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
 import { login, register, resetPassword, sendPwdResetCode } from "../api/auth";
+import { useAuthStore } from "../stores/auth";
 
 // 封面图路径（同一张图用于背景与左侧图）
 const coverImage = "/auth-cover.png";
 const footerYear = new Date().getFullYear();
+const router = useRouter();
+const authStore = useAuthStore();
 
 // 登录表单状态
 const loginForm = reactive({
@@ -143,12 +147,29 @@ const handleLogin = async () => {
   }
   loading.value = true;
   try {
-    await login({
+    const res = await login({
       account: loginForm.account,
       password: loginForm.password,
     });
     message.success("登录成功");
-    // TODO: 登录成功后的跳转或状态处理
+    // 写入 pinia 登录态（后端返回 access/refresh/id/username）
+    const data = res?.data || {};
+    authStore.setAuth({
+      accessToken: data.access || "",
+      refreshToken: data.refresh || "",
+      userId: data.id || "",
+      username: data.username || "",
+      avatar: data.avatar || "",
+    });
+
+    if (!authStore.isLoggedIn) {
+      message.warning("未获取到登录凭证，请稍后重试");
+      return;
+    }
+
+    // 登录成功后跳转：优先回到 redirect
+    const redirect = router.currentRoute.value?.query?.redirect;
+    router.push(typeof redirect === "string" ? redirect : "/home");
   } catch (error) {
     message.error(error?.message || "登录失败");
   } finally {

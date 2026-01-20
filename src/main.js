@@ -1,10 +1,11 @@
-import { createApp, h } from "vue";
+﻿import { createApp, h } from "vue";
 import { ConfigProvider } from "ant-design-vue";
+import { createPinia } from "pinia";
 import App from "./App.vue";
 import "./assets/global.css";
 import router from "./router";
 
-// 全局主题配置：统一组件主色为 #78C841（乎知绿）
+// 全局主题配置：统一 Ant Design Vue 的主题色为 #78C841（乎知绿）
 const theme = {
   token: {
     colorPrimary: "#78C841",
@@ -17,5 +18,6 @@ const app = createApp({
   render: () => h(ConfigProvider, { theme }, { default: () => h(App) }),
 });
 
+app.use(createPinia());
 app.use(router);
 app.mount("#app");
