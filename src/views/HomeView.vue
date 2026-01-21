@@ -1,4 +1,4 @@
-﻿<script setup>
+<script setup>
 import { computed, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
@@ -12,40 +12,34 @@ import AppHeader from "../components/AppHeader.vue";
 import { fetchQuestionList } from "../api/question";
 import { useAuthStore } from "../stores/auth";
 import { VOTE_STATUS } from "../constants/vote";
+import { HOME_NAV } from "../constants/homeNav";
+import { formatCount, toPreviewText } from "../utils/format";
 
 const router = useRouter();
 const authStore = useAuthStore();
 const footerYear = new Date().getFullYear();
 
-const activeNav = ref("qa");
+const activeNav = ref(HOME_NAV.QA);
 const loading = ref(false);
 const list = ref([]);
 
+const isFollowActive = computed(
+  () =>
+    activeNav.value === HOME_NAV.FOLLOW_QUESTIONS ||
+    activeNav.value === HOME_NAV.FOLLOW_TOPICS,
+);
+
 const followLabel = computed(() => {
-  if (activeNav.value === "follow-questions") return "关注的问题";
-  if (activeNav.value === "follow-topics") return "关注的话题";
+  if (activeNav.value === HOME_NAV.FOLLOW_QUESTIONS) return "关注的问题";
+  if (activeNav.value === HOME_NAV.FOLLOW_TOPICS) return "关注的话题";
   return "关注";
 });
 
 const handleSelectNav = (key) => {
   activeNav.value = key;
-  if (key !== "qa") {
+  if (key !== HOME_NAV.QA) {
     message.info("该模块开发中，当前仅对接问答列表");
   }
-};
-
-const toPreviewText = (text, max = 160) => {
-  const value = (text || "").trim().replace(/\s+/g, " ");
-  if (!value) return "";
-  return value.length > max ? `${value.slice(0, max)}...` : value;
-};
-
-// 数字格式化：如 1200 -> 1.2k
-const formatCount = (value) => {
-  const num = Number(value) || 0;
-  if (num < 1000) return `${num}`;
-  const k = (num / 1000).toFixed(1).replace(/\.0$/, "");
-  return `${k}k`;
 };
 
 const handleCollectAnswer = () => {
@@ -83,12 +77,12 @@ onMounted(() => {
       <main class="main">
         <div class="content-card">
           <div class="nav-tabs">
-            <button class="tab" :class="{ active: activeNav === 'qa' }" @click="handleSelectNav('qa')">
+            <button class="tab" :class="{ active: activeNav === HOME_NAV.QA }" @click="handleSelectNav(HOME_NAV.QA)">
               问答
             </button>
 
             <a-dropdown :trigger="['hover']">
-              <button class="tab follow-tab" :class="{ active: activeNav.startsWith('follow') }">
+              <button class="tab follow-tab" :class="{ active: isFollowActive }">
                 {{ followLabel }}
                 <DownOutlined class="down" />
               </button>
@@ -96,21 +90,22 @@ onMounted(() => {
                 <a-menu class="follow-menu">
                   <a-menu-item key="follow-questions" :class="[
                     'follow-item',
-                    { active: activeNav === 'follow-questions' },
-                  ]" @click="handleSelectNav('follow-questions')">
+                    { active: activeNav === HOME_NAV.FOLLOW_QUESTIONS },
+                  ]" @click="handleSelectNav(HOME_NAV.FOLLOW_QUESTIONS)">
                     关注的问题
                   </a-menu-item>
                   <a-menu-item key="follow-topics" :class="[
                     'follow-item',
-                    { active: activeNav === 'follow-topics' },
-                  ]" @click="handleSelectNav('follow-topics')">
+                    { active: activeNav === HOME_NAV.FOLLOW_TOPICS },
+                  ]" @click="handleSelectNav(HOME_NAV.FOLLOW_TOPICS)">
                     关注的话题
                   </a-menu-item>
                 </a-menu>
               </template>
             </a-dropdown>
 
-            <button class="tab" :class="{ active: activeNav === 'topics' }" @click="handleSelectNav('topics')">
+            <button class="tab" :class="{ active: activeNav === HOME_NAV.TOPICS }"
+              @click="handleSelectNav(HOME_NAV.TOPICS)">
               话题
             </button>
           </div>
@@ -135,12 +130,9 @@ onMounted(() => {
                 </p>
 
                 <div class="actions">
-                  <button
-                    class="vote-btn"
-                    :class="{ voted: isUpvoted(item.top_answer?.user_vote_status) }"
-                    type="button"
-                    @click="message.info('赞同功能开发中')"
-                  >
+                  <button class="vote-btn" :class="{
+                    voted: isUpvoted(item.top_answer?.user_vote_status),
+                  }" type="button" @click="message.info('赞同功能开发中')">
                     <LikeFilled />
                     <span class="action-text">
                       {{ formatCount(item.top_answer?.upvote_count || 0) }} 赞同

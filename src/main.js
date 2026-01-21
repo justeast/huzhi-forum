@@ -1,4 +1,4 @@
-﻿import { createApp, h } from "vue";
+import { createApp, h } from "vue";
 import { ConfigProvider } from "ant-design-vue";
 import { createPinia } from "pinia";
 import App from "./App.vue";

@@ -1,4 +1,4 @@
-﻿/* 全局样式：隐藏 Edge/IE 浏览器的密码查看与清除按钮，避免与自定义显隐图标重复 */
+/* 全局样式：隐藏 Edge/IE 浏览器的密码查看与清除按钮，避免与自定义显隐图标重复 */
 input::-ms-reveal,
 input::-ms-clear {
   display: none;
