@@ -1,4 +1,7 @@
 import axios from "axios";
+import { message } from "ant-design-vue";
+import router from "../router";
+import { useAuthStore } from "../stores/auth";
 
 // 统一的 HTTP 实例：基础地址来自 .env 的 VITE_API_BASE
 export const http = axios.create({
@@ -28,3 +31,51 @@ http.interceptors.request.use((config) => {
   return config;
 });
 
+let isHandling401 = false;
+
+// 响应拦截：遇到 401（登录过期/未认证）时清理登录态并跳转到登录页
+http.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    const status = error?.response?.status;
+    if (status === 401) {
+      error.__handled401 = true;
+
+      if (!isHandling401) {
+        isHandling401 = true;
+
+        try {
+          useAuthStore().logout();
+        } catch {
+          try {
+            localStorage.removeItem("huzhi_auth");
+          } catch {
+            // 忽略
+          }
+        }
+
+        try {
+          const current = router.currentRoute?.value;
+          const redirect = current?.fullPath;
+          if (current?.path !== "/auth") {
+            router.replace({
+              path: "/auth",
+              query: redirect ? { redirect } : {},
+            });
+          }
+        } catch {
+          // 路由不可用时兜底刷新到登录页
+          window.location.href = "/auth";
+        }
+
+        message.warning("登录已过期，请重新登录");
+
+        setTimeout(() => {
+          isHandling401 = false;
+        }, 1200);
+      }
+    }
+
+    return Promise.reject(error);
+  },
+);

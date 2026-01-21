@@ -55,6 +55,8 @@ const handleFetchList = async () => {
     const data = await fetchQuestionList({ page: 1, size: 10 });
     list.value = data?.results || [];
   } catch (error) {
+    // 401 由 http 拦截器统一处理，这里不再重复提示/跳转
+    if (error?.__handled401 || error?.response?.status === 401) return;
     message.error(error?.message || "获取问答列表失败");
     if (!authStore.isLoggedIn) {
       router.push("/auth");
