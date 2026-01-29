@@ -11,12 +11,14 @@ import {
   toggleTopicFollow,
 } from "../api/topic";
 import { useAuthStore } from "../stores/auth";
+import { useTopicFollowStore } from "../stores/topicFollow";
 import { HOME_NAV } from "../constants/homeNav";
 import TopicList from "../components/TopicList.vue";
 import QuestionList from "../components/QuestionList.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
+const topicFollowStore = useTopicFollowStore();
 const footerYear = new Date().getFullYear();
 
 const activeNav = ref(HOME_NAV.QA);
@@ -136,7 +138,7 @@ const fetchTopics = async ({ reset } = { reset: false }) => {
       size: TOPIC_PAGE_SIZE,
       search: topicKeyword.value || "",
     });
-    const results = data?.results || [];
+    const results = topicFollowStore.applyToList(data?.results || []);
     topicList.value = mergeById(topicList.value, results);
     topicPage.value = page;
     topicHasMore.value = Boolean(data?.next);
@@ -179,6 +181,11 @@ const handleToggleTopicFollow = async (topic) => {
 
     topic.is_following = action === 1;
     topic.follower_count = nextFollowerCount;
+    topicFollowStore.setTopicState(id, {
+      is_following: topic.is_following,
+      follower_count: topic.follower_count,
+    });
+    topicFollowStore.markFollowTopicsDirty();
 
     message.success(action === 1 ? "已关注" : "已取消关注");
   } catch (error) {
@@ -250,10 +257,11 @@ const fetchFollowTopics = async ({ reset } = { reset: false }) => {
 
   try {
     const data = await fetchFollowingTopics({ page, size: TOPIC_PAGE_SIZE });
-    const results = data?.results || [];
+    const results = topicFollowStore.applyToList(data?.results || []);
     followTopicList.value = mergeById(followTopicList.value, results);
     followTopicPage.value = page;
     followTopicHasMore.value = Boolean(data?.next);
+    if (reset) topicFollowStore.clearFollowTopicsDirty();
   } catch (error) {
     if (error?.__handled401 || error?.response?.status === 401) return;
     message.error(error?.message || "获取关注的话题失败");
@@ -265,7 +273,9 @@ const fetchFollowTopics = async ({ reset } = { reset: false }) => {
 
 const ensureFollowTopicsLoaded = () => {
   if (followTopicLoading.value) return;
-  if (followTopicList.value.length > 0) return;
+  if (followTopicList.value.length > 0 && !topicFollowStore.followTopicsDirty) {
+    return;
+  }
   fetchFollowTopics({ reset: true });
 };
 
@@ -289,13 +299,36 @@ const handleToggleFollowTopicInFollowTab = async (topic) => {
     await toggleTopicFollow(id, action);
 
     if (action === 2) {
+      const nextFollowerCount = Math.max(
+        0,
+        Number(topic.follower_count || 0) - 1,
+      );
+      topicFollowStore.setTopicState(id, {
+        is_following: false,
+        follower_count: nextFollowerCount,
+      });
+
+      const hit = topicList.value.find((t) => t?.id === id);
+      if (hit) {
+        hit.is_following = false;
+        hit.follower_count = nextFollowerCount;
+      }
+
       followTopicList.value = followTopicList.value.filter((t) => t?.id !== id);
       message.success("已取消关注");
       return;
     }
 
+    const nextFollowerCount = Math.max(
+      0,
+      Number(topic.follower_count || 0) + 1,
+    );
     topic.is_following = true;
-    topic.follower_count = Math.max(0, Number(topic.follower_count || 0) + 1);
+    topic.follower_count = nextFollowerCount;
+    topicFollowStore.setTopicState(id, {
+      is_following: true,
+      follower_count: nextFollowerCount,
+    });
     message.success("已关注");
   } catch (error) {
     message.error(error?.message || "操作失败");
