@@ -19,12 +19,13 @@ export const fetchTopicList = async (params = {}) => {
 };
 
 // 获取用户关注的话题（GET /user/following/topics/）
-// params: { page?: number, size?: number }
+// params: { page?: number, size?: number, search?: string }
 export const fetchFollowingTopics = async (params = {}) => {
   const res = await http.get("/user/following/topics/", {
     params: {
       page: params.page || 1,
       size: params.size || 20,
+      search: params.search || undefined,
     },
   });
 

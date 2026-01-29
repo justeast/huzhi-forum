@@ -23,7 +23,12 @@ const footerYear = new Date().getFullYear();
 
 const activeNav = ref(HOME_NAV.QA);
 const loading = ref(false);
+const loadingMore = ref(false);
 const list = ref([]);
+const QA_PAGE_SIZE = 10;
+const qaPage = ref(1);
+const qaHasMore = ref(true);
+const qaKeyword = ref("");
 
 const headerKeyword = ref("");
 
@@ -42,6 +47,7 @@ const followQuestionPage = ref(1);
 const followQuestionHasMore = ref(true);
 const followQuestionLoading = ref(false);
 const followQuestionLoadingMore = ref(false);
+const followQuestionKeyword = ref("");
 
 const followTopicList = ref([]);
 const followTopicPage = ref(1);
@@ -49,6 +55,7 @@ const followTopicHasMore = ref(true);
 const followTopicLoading = ref(false);
 const followTopicLoadingMore = ref(false);
 const followTopicFollowLoadingMap = ref({});
+const followTopicKeyword = ref("");
 
 const isFollowActive = computed(
   () =>
@@ -63,14 +70,47 @@ const followLabel = computed(() => {
 });
 
 const handleSelectNav = (key) => {
-  activeNav.value = key;
-  if (key === HOME_NAV.TOPICS) {
-    if (topicKeyword.value) {
+  const prevNav = activeNav.value;
+
+  // 点击当前 Tab 时：如果存在搜索关键字，则清空并回到列表态
+  if (prevNav === key) {
+    if (key === HOME_NAV.TOPICS && topicKeyword.value) {
       topicKeyword.value = "";
       headerKeyword.value = "";
       fetchTopics({ reset: true });
       return;
     }
+    if (key === HOME_NAV.QA && qaKeyword.value) {
+      qaKeyword.value = "";
+      headerKeyword.value = "";
+      fetchQuestions({ reset: true });
+      return;
+    }
+    if (key === HOME_NAV.FOLLOW_QUESTIONS && followQuestionKeyword.value) {
+      followQuestionKeyword.value = "";
+      headerKeyword.value = "";
+      fetchFollowQuestions({ reset: true });
+      return;
+    }
+    if (key === HOME_NAV.FOLLOW_TOPICS && followTopicKeyword.value) {
+      followTopicKeyword.value = "";
+      headerKeyword.value = "";
+      fetchFollowTopics({ reset: true });
+      return;
+    }
+  }
+
+  activeNav.value = key;
+
+  // 切换 Tab 时同步输入框内容（不同 Tab 记忆各自的搜索关键字）
+  if (key === HOME_NAV.QA) headerKeyword.value = qaKeyword.value;
+  if (key === HOME_NAV.TOPICS) headerKeyword.value = topicKeyword.value;
+  if (key === HOME_NAV.FOLLOW_QUESTIONS)
+    headerKeyword.value = followQuestionKeyword.value;
+  if (key === HOME_NAV.FOLLOW_TOPICS)
+    headerKeyword.value = followTopicKeyword.value;
+
+  if (key === HOME_NAV.TOPICS) {
     ensureTopicsLoaded();
     return;
   }
@@ -82,16 +122,39 @@ const handleSelectNav = (key) => {
     ensureFollowTopicsLoaded();
     return;
   }
-  if (key !== HOME_NAV.QA) {
-    message.info("该模块开发中，当前仅对接问答列表");
+  if (key === HOME_NAV.QA) {
+    ensureQuestionsLoaded();
+    return;
   }
+
+  message.info("该模块开发中");
 };
 
-const handleFetchList = async () => {
-  loading.value = true;
+const fetchQuestions = async ({ reset } = { reset: false }) => {
+  if (loading.value || loadingMore.value) return;
+  if (!reset && !qaHasMore.value) return;
+
+  if (reset) {
+    qaPage.value = 1;
+    qaHasMore.value = true;
+    list.value = [];
+    loading.value = true;
+  } else {
+    loadingMore.value = true;
+  }
+
+  const page = reset ? 1 : qaPage.value + 1;
+
   try {
-    const data = await fetchQuestionList({ page: 1, size: 10 });
-    list.value = data?.results || [];
+    const data = await fetchQuestionList({
+      page,
+      size: QA_PAGE_SIZE,
+      search: qaKeyword.value || undefined,
+    });
+    const results = data?.results || [];
+    list.value = mergeById(list.value, results);
+    qaPage.value = page;
+    qaHasMore.value = Boolean(data?.next);
   } catch (error) {
     // 401 由 http 拦截器统一处理，这里不再重复提示/跳转
     if (error?.__handled401 || error?.response?.status === 401) return;
@@ -101,7 +164,18 @@ const handleFetchList = async () => {
     }
   } finally {
     loading.value = false;
+    loadingMore.value = false;
   }
+};
+
+const ensureQuestionsLoaded = () => {
+  if (loading.value) return;
+  if (list.value.length > 0) return;
+  fetchQuestions({ reset: true });
+};
+
+const handleLoadMoreQuestions = () => {
+  fetchQuestions({ reset: false });
 };
 
 const mergeById = (items, incoming) => {
@@ -216,6 +290,7 @@ const fetchFollowQuestions = async ({ reset } = { reset: false }) => {
     const data = await fetchFollowingQuestionList({
       page,
       size: FOLLOW_QUESTION_PAGE_SIZE,
+      search: followQuestionKeyword.value || undefined,
     });
     const results = data?.results || [];
     followQuestionList.value = mergeById(followQuestionList.value, results);
@@ -256,7 +331,11 @@ const fetchFollowTopics = async ({ reset } = { reset: false }) => {
   const page = reset ? 1 : followTopicPage.value + 1;
 
   try {
-    const data = await fetchFollowingTopics({ page, size: TOPIC_PAGE_SIZE });
+    const data = await fetchFollowingTopics({
+      page,
+      size: TOPIC_PAGE_SIZE,
+      search: followTopicKeyword.value || undefined,
+    });
     const results = topicFollowStore.applyToList(data?.results || []);
     followTopicList.value = mergeById(followTopicList.value, results);
     followTopicPage.value = page;
@@ -343,29 +422,63 @@ const handleHeaderSearch = (keyword) => {
   const value = (keyword || "").trim();
   if (!value) return;
 
-  if (activeNav.value !== HOME_NAV.TOPICS) {
-    message.info("搜索当前仅支持话题页");
+  if (activeNav.value === HOME_NAV.TOPICS) {
+    topicKeyword.value = value;
+    fetchTopics({ reset: true });
+    return;
+  }
+  if (activeNav.value === HOME_NAV.FOLLOW_TOPICS) {
+    followTopicKeyword.value = value;
+    fetchFollowTopics({ reset: true });
+    return;
+  }
+  if (activeNav.value === HOME_NAV.FOLLOW_QUESTIONS) {
+    followQuestionKeyword.value = value;
+    fetchFollowQuestions({ reset: true });
+    return;
+  }
+  if (activeNav.value === HOME_NAV.QA) {
+    qaKeyword.value = value;
+    fetchQuestions({ reset: true });
     return;
   }
 
-  topicKeyword.value = value;
-  fetchTopics({ reset: true });
+  message.info("该页面暂不支持搜索");
 };
 
 watch(headerKeyword, (nextValue, prevValue) => {
-  if (activeNav.value !== HOME_NAV.TOPICS) return;
-  if (!topicKeyword.value) return;
-
   const next = (nextValue || "").trim();
   const prev = (prevValue || "").trim();
-  if (prev && !next) {
+
+  if (!prev || next) return;
+
+  if (activeNav.value === HOME_NAV.TOPICS && topicKeyword.value) {
     topicKeyword.value = "";
     fetchTopics({ reset: true });
+    return;
+  }
+  if (activeNav.value === HOME_NAV.FOLLOW_TOPICS && followTopicKeyword.value) {
+    followTopicKeyword.value = "";
+    fetchFollowTopics({ reset: true });
+    return;
+  }
+  if (
+    activeNav.value === HOME_NAV.FOLLOW_QUESTIONS &&
+    followQuestionKeyword.value
+  ) {
+    followQuestionKeyword.value = "";
+    fetchFollowQuestions({ reset: true });
+    return;
+  }
+  if (activeNav.value === HOME_NAV.QA && qaKeyword.value) {
+    qaKeyword.value = "";
+    fetchQuestions({ reset: true });
+    return;
   }
 });
 
 onMounted(() => {
-  handleFetchList();
+  fetchQuestions({ reset: true });
 });
 </script>
 
@@ -415,7 +528,13 @@ onMounted(() => {
           </div>
 
           <template v-if="activeNav === HOME_NAV.QA">
-            <QuestionList :questions="list" :loading="loading" />
+            <QuestionList
+              :questions="list"
+              :loading="loading"
+              :loadingMore="loadingMore"
+              :hasMore="qaHasMore"
+              @load-more="handleLoadMoreQuestions"
+            />
           </template>
 
           <template v-else-if="activeNav === HOME_NAV.FOLLOW_QUESTIONS">

@@ -1,12 +1,13 @@
 import { http } from "./http";
 
 // 获取问题列表（GET /question/）
-// params: { page?: number, size?: number }
+// params: { page?: number, size?: number, search?: string }
 export const fetchQuestionList = async (params = {}) => {
   const res = await http.get("/question/", {
     params: {
       page: params.page || 1,
       size: params.size || 10,
+      search: params.search || undefined,
     },
   });
 
@@ -18,12 +19,13 @@ export const fetchQuestionList = async (params = {}) => {
 };
 
 // 获取用户关注的问题（GET /user/following/questions/）
-// params: { page?: number, size?: number }
+// params: { page?: number, size?: number, search?: string }
 export const fetchFollowingQuestionList = async (params = {}) => {
   const res = await http.get("/user/following/questions/", {
     params: {
       page: params.page || 1,
       size: params.size || 10,
+      search: params.search || undefined,
     },
   });
 

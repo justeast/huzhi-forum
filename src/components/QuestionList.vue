@@ -136,6 +136,11 @@ const handleCollect = () => {
 
 .feed-item {
   padding: 18px 18px 14px;
+  transition: background 0.18s ease;
+}
+
+.feed-item:hover {
+  background: rgba(120, 200, 65, 0.06);
 }
 
 .feed-item + .feed-item {
@@ -147,6 +152,11 @@ const handleCollect = () => {
   font-size: 20px;
   font-weight: 800;
   color: var(--text);
+  transition: color 0.18s ease;
+}
+
+.feed-item:hover .title {
+  color: var(--brand-color);
 }
 
 .answer-preview {
@@ -236,4 +246,3 @@ const handleCollect = () => {
   padding-bottom: 8px;
 }
 </style>
-
