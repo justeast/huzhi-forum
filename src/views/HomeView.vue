@@ -2,20 +2,18 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
-import {
-  CommentOutlined,
-  LikeFilled,
-  StarOutlined,
-  DownOutlined,
-} from "@ant-design/icons-vue";
+import { DownOutlined } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
-import { fetchQuestionList } from "../api/question";
-import { fetchTopicList, toggleTopicFollow } from "../api/topic";
+import { fetchFollowingQuestionList, fetchQuestionList } from "../api/question";
+import {
+  fetchFollowingTopics,
+  fetchTopicList,
+  toggleTopicFollow,
+} from "../api/topic";
 import { useAuthStore } from "../stores/auth";
-import { VOTE_STATUS } from "../constants/vote";
 import { HOME_NAV } from "../constants/homeNav";
-import { formatCount, toPreviewText } from "../utils/format";
 import TopicList from "../components/TopicList.vue";
+import QuestionList from "../components/QuestionList.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -35,6 +33,20 @@ const topicLoading = ref(false);
 const topicLoadingMore = ref(false);
 const topicKeyword = ref("");
 const topicFollowLoadingMap = ref({});
+
+const FOLLOW_QUESTION_PAGE_SIZE = 10;
+const followQuestionList = ref([]);
+const followQuestionPage = ref(1);
+const followQuestionHasMore = ref(true);
+const followQuestionLoading = ref(false);
+const followQuestionLoadingMore = ref(false);
+
+const followTopicList = ref([]);
+const followTopicPage = ref(1);
+const followTopicHasMore = ref(true);
+const followTopicLoading = ref(false);
+const followTopicLoadingMore = ref(false);
+const followTopicFollowLoadingMap = ref({});
 
 const isFollowActive = computed(
   () =>
@@ -60,17 +72,18 @@ const handleSelectNav = (key) => {
     ensureTopicsLoaded();
     return;
   }
+  if (key === HOME_NAV.FOLLOW_QUESTIONS) {
+    ensureFollowQuestionsLoaded();
+    return;
+  }
+  if (key === HOME_NAV.FOLLOW_TOPICS) {
+    ensureFollowTopicsLoaded();
+    return;
+  }
   if (key !== HOME_NAV.QA) {
     message.info("该模块开发中，当前仅对接问答列表");
   }
 };
-
-const handleCollectAnswer = () => {
-  message.info("收藏功能开发中");
-};
-
-// 当前用户是否已对该回答“赞同”（接口字段 user_vote_status：见 VOTE_STATUS）
-const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
 
 const handleFetchList = async () => {
   loading.value = true;
@@ -89,7 +102,7 @@ const handleFetchList = async () => {
   }
 };
 
-const mergeTopics = (items, incoming) => {
+const mergeById = (items, incoming) => {
   const map = new Map((items || []).map((t) => [t?.id, t]));
   (incoming || []).forEach((t) => {
     if (!t?.id) return;
@@ -124,7 +137,7 @@ const fetchTopics = async ({ reset } = { reset: false }) => {
       search: topicKeyword.value || "",
     });
     const results = data?.results || [];
-    topicList.value = mergeTopics(topicList.value, results);
+    topicList.value = mergeById(topicList.value, results);
     topicPage.value = page;
     topicHasMore.value = Boolean(data?.next);
   } catch (error) {
@@ -177,6 +190,122 @@ const handleToggleTopicFollow = async (topic) => {
   }
 };
 
+const fetchFollowQuestions = async ({ reset } = { reset: false }) => {
+  if (followQuestionLoading.value || followQuestionLoadingMore.value) return;
+  if (!reset && !followQuestionHasMore.value) return;
+
+  if (reset) {
+    followQuestionPage.value = 1;
+    followQuestionHasMore.value = true;
+    followQuestionList.value = [];
+    followQuestionLoading.value = true;
+  } else {
+    followQuestionLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : followQuestionPage.value + 1;
+
+  try {
+    const data = await fetchFollowingQuestionList({
+      page,
+      size: FOLLOW_QUESTION_PAGE_SIZE,
+    });
+    const results = data?.results || [];
+    followQuestionList.value = mergeById(followQuestionList.value, results);
+    followQuestionPage.value = page;
+    followQuestionHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取关注的问题失败");
+  } finally {
+    followQuestionLoading.value = false;
+    followQuestionLoadingMore.value = false;
+  }
+};
+
+const ensureFollowQuestionsLoaded = () => {
+  if (followQuestionLoading.value) return;
+  if (followQuestionList.value.length > 0) return;
+  fetchFollowQuestions({ reset: true });
+};
+
+const handleLoadMoreFollowQuestions = () => {
+  fetchFollowQuestions({ reset: false });
+};
+
+const fetchFollowTopics = async ({ reset } = { reset: false }) => {
+  if (followTopicLoading.value || followTopicLoadingMore.value) return;
+  if (!reset && !followTopicHasMore.value) return;
+
+  if (reset) {
+    followTopicPage.value = 1;
+    followTopicHasMore.value = true;
+    followTopicList.value = [];
+    followTopicLoading.value = true;
+  } else {
+    followTopicLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : followTopicPage.value + 1;
+
+  try {
+    const data = await fetchFollowingTopics({ page, size: TOPIC_PAGE_SIZE });
+    const results = data?.results || [];
+    followTopicList.value = mergeById(followTopicList.value, results);
+    followTopicPage.value = page;
+    followTopicHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取关注的话题失败");
+  } finally {
+    followTopicLoading.value = false;
+    followTopicLoadingMore.value = false;
+  }
+};
+
+const ensureFollowTopicsLoaded = () => {
+  if (followTopicLoading.value) return;
+  if (followTopicList.value.length > 0) return;
+  fetchFollowTopics({ reset: true });
+};
+
+const handleLoadMoreFollowTopics = () => {
+  fetchFollowTopics({ reset: false });
+};
+
+const handleToggleFollowTopicInFollowTab = async (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  if (followTopicFollowLoadingMap.value[id]) return;
+
+  const isFollowing = Boolean(topic?.is_following);
+  const action = isFollowing ? 2 : 1;
+
+  followTopicFollowLoadingMap.value = {
+    ...followTopicFollowLoadingMap.value,
+    [id]: true,
+  };
+  try {
+    await toggleTopicFollow(id, action);
+
+    if (action === 2) {
+      followTopicList.value = followTopicList.value.filter((t) => t?.id !== id);
+      message.success("已取消关注");
+      return;
+    }
+
+    topic.is_following = true;
+    topic.follower_count = Math.max(0, Number(topic.follower_count || 0) + 1);
+    message.success("已关注");
+  } catch (error) {
+    message.error(error?.message || "操作失败");
+  } finally {
+    const next = { ...followTopicFollowLoadingMap.value };
+    delete next[id];
+    followTopicFollowLoadingMap.value = next;
+  }
+};
+
 const handleHeaderSearch = (keyword) => {
   const value = (keyword || "").trim();
   if (!value) return;
@@ -220,7 +349,11 @@ onMounted(() => {
             </button>
 
             <a-dropdown :trigger="['hover']">
-              <button class="tab follow-tab" :class="{ active: isFollowActive }">
+              <button
+                class="tab follow-tab"
+                :class="{ active: isFollowActive }"
+                @click="handleSelectNav(HOME_NAV.FOLLOW_QUESTIONS)"
+              >
                 {{ followLabel }}
                 <DownOutlined class="down" />
               </button>
@@ -249,63 +382,18 @@ onMounted(() => {
           </div>
 
           <template v-if="activeNav === HOME_NAV.QA">
-            <a-spin :spinning="loading">
-              <div class="feed">
-                <a-empty
-                  v-if="!loading && list.length === 0"
-                  description="暂无内容"
-                />
+            <QuestionList :questions="list" :loading="loading" />
+          </template>
 
-                <div v-for="item in list" :key="item.id" class="feed-item">
-                  <h2 class="title">{{ item.title }}</h2>
-
-                  <p class="answer-preview">
-                    <template v-if="item.top_answer">
-                      <span class="answerer">
-                        {{ item.top_answer.respondent?.username || "匿名用户" }}：
-                      </span>
-                      {{ toPreviewText(item.top_answer.content, 260) }}
-                    </template>
-                    <template v-else>
-                      {{ toPreviewText(item.content, 260) }}
-                    </template>
-                  </p>
-
-                  <div class="actions">
-                    <button
-                      class="vote-btn"
-                      :class="{
-                        voted: isUpvoted(item.top_answer?.user_vote_status),
-                      }"
-                      type="button"
-                      @click="message.info('赞同功能开发中')"
-                    >
-                      <LikeFilled />
-                      <span class="action-text">
-                        {{ formatCount(item.top_answer?.upvote_count || 0) }}
-                        赞同
-                      </span>
-                    </button>
-
-                    <div class="action-meta">
-                      <CommentOutlined />
-                      <span class="action-text">
-                        {{ item.top_answer?.comment_count || 0 }} 条评论
-                      </span>
-                    </div>
-
-                    <button
-                      class="action-meta link"
-                      type="button"
-                      @click="handleCollectAnswer"
-                    >
-                      <StarOutlined />
-                      <span class="action-text">收藏</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </a-spin>
+          <template v-else-if="activeNav === HOME_NAV.FOLLOW_QUESTIONS">
+            <QuestionList
+              :questions="followQuestionList"
+              :loading="followQuestionLoading"
+              :loadingMore="followQuestionLoadingMore"
+              :hasMore="followQuestionHasMore"
+              emptyText="暂无关注的问题"
+              @load-more="handleLoadMoreFollowQuestions"
+            />
           </template>
 
           <template v-else-if="activeNav === HOME_NAV.TOPICS">
@@ -317,6 +405,20 @@ onMounted(() => {
               :followLoadingMap="topicFollowLoadingMap"
               @load-more="handleLoadMoreTopics"
               @toggle-follow="handleToggleTopicFollow"
+            />
+          </template>
+
+          <template v-else-if="activeNav === HOME_NAV.FOLLOW_TOPICS">
+            <TopicList
+              :topics="followTopicList"
+              :loading="followTopicLoading"
+              :loadingMore="followTopicLoadingMore"
+              :hasMore="followTopicHasMore"
+              :followLoadingMap="followTopicFollowLoadingMap"
+              unfollowBehavior="remove"
+              emptyText="暂无关注的话题"
+              @load-more="handleLoadMoreFollowTopics"
+              @toggle-follow="handleToggleFollowTopicInFollowTab"
             />
           </template>
 

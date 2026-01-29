@@ -18,6 +18,23 @@ export const fetchTopicList = async (params = {}) => {
   return res.data.data;
 };
 
+// 获取用户关注的话题（GET /user/following/topics/）
+// params: { page?: number, size?: number }
+export const fetchFollowingTopics = async (params = {}) => {
+  const res = await http.get("/user/following/topics/", {
+    params: {
+      page: params.page || 1,
+      size: params.size || 20,
+    },
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取关注的话题失败");
+  }
+
+  return res.data.data;
+};
+
 // 关注/取消关注话题（POST /topic/{topic_id}/follow/）
 // action: 1-关注、2-取消关注
 export const toggleTopicFollow = async (topicId, action) => {
@@ -34,4 +51,3 @@ export const toggleTopicFollow = async (topicId, action) => {
 
   return res.data.data;
 };
-
