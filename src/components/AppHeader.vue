@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import {
@@ -12,15 +12,29 @@ import {
 } from "@ant-design/icons-vue";
 import { useAuthStore } from "../stores/auth";
 
+const props = defineProps({
+  modelValue: { type: String, default: "" },
+});
+
+const emit = defineEmits(["update:modelValue", "search"]);
+
 const router = useRouter();
 const authStore = useAuthStore();
 
-const keyword = ref("");
+const keyword = computed({
+  get: () => props.modelValue,
+  set: (value) => emit("update:modelValue", value),
+});
 const avatarUrl = computed(() => authStore.avatarUrl);
 
-// 搜索暂未对接接口，先做交互占位
+// 搜索：由父组件决定具体业务（当前首页复用为话题搜索）
 const handleSearch = () => {
-  message.info("搜索功能开发中");
+  const value = (keyword.value || "").trim();
+  if (!value) {
+    message.info("请输入搜索关键词");
+    return;
+  }
+  emit("search", value);
 };
 
 const handleCreateQuestion = () => {
@@ -54,8 +68,14 @@ const handleLogout = () => {
       </div>
 
       <div class="center">
-        <a-input v-model:value="keyword" class="search" size="large" allow-clear placeholder="搜索你感兴趣的内容..."
-          @pressEnter="handleSearch">
+        <a-input
+          v-model:value="keyword"
+          class="search"
+          size="large"
+          allow-clear
+          placeholder="搜索你感兴趣的内容..."
+          @pressEnter="handleSearch"
+        >
           <template #suffix>
             <SearchOutlined class="search-icon" @click="handleSearch" />
           </template>

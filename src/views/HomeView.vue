@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
 import {
@@ -10,10 +10,12 @@ import {
 } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import { fetchQuestionList } from "../api/question";
+import { fetchTopicList, toggleTopicFollow } from "../api/topic";
 import { useAuthStore } from "../stores/auth";
 import { VOTE_STATUS } from "../constants/vote";
 import { HOME_NAV } from "../constants/homeNav";
 import { formatCount, toPreviewText } from "../utils/format";
+import TopicList from "../components/TopicList.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -22,6 +24,17 @@ const footerYear = new Date().getFullYear();
 const activeNav = ref(HOME_NAV.QA);
 const loading = ref(false);
 const list = ref([]);
+
+const headerKeyword = ref("");
+
+const TOPIC_PAGE_SIZE = 20;
+const topicList = ref([]);
+const topicPage = ref(1);
+const topicHasMore = ref(true);
+const topicLoading = ref(false);
+const topicLoadingMore = ref(false);
+const topicKeyword = ref("");
+const topicFollowLoadingMap = ref({});
 
 const isFollowActive = computed(
   () =>
@@ -37,6 +50,16 @@ const followLabel = computed(() => {
 
 const handleSelectNav = (key) => {
   activeNav.value = key;
+  if (key === HOME_NAV.TOPICS) {
+    if (topicKeyword.value) {
+      topicKeyword.value = "";
+      headerKeyword.value = "";
+      fetchTopics({ reset: true });
+      return;
+    }
+    ensureTopicsLoaded();
+    return;
+  }
   if (key !== HOME_NAV.QA) {
     message.info("该模块开发中，当前仅对接问答列表");
   }
@@ -66,6 +89,119 @@ const handleFetchList = async () => {
   }
 };
 
+const mergeTopics = (items, incoming) => {
+  const map = new Map((items || []).map((t) => [t?.id, t]));
+  (incoming || []).forEach((t) => {
+    if (!t?.id) return;
+    if (map.has(t.id)) {
+      map.set(t.id, { ...map.get(t.id), ...t });
+    } else {
+      map.set(t.id, t);
+    }
+  });
+  return Array.from(map.values());
+};
+
+const fetchTopics = async ({ reset } = { reset: false }) => {
+  if (topicLoading.value || topicLoadingMore.value) return;
+  if (!reset && !topicHasMore.value) return;
+
+  if (reset) {
+    topicPage.value = 1;
+    topicHasMore.value = true;
+    topicList.value = [];
+    topicLoading.value = true;
+  } else {
+    topicLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : topicPage.value + 1;
+
+  try {
+    const data = await fetchTopicList({
+      page,
+      size: TOPIC_PAGE_SIZE,
+      search: topicKeyword.value || "",
+    });
+    const results = data?.results || [];
+    topicList.value = mergeTopics(topicList.value, results);
+    topicPage.value = page;
+    topicHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取话题列表失败");
+  } finally {
+    topicLoading.value = false;
+    topicLoadingMore.value = false;
+  }
+};
+
+const ensureTopicsLoaded = () => {
+  if (topicLoading.value) return;
+  if (topicList.value.length > 0) return;
+  fetchTopics({ reset: true });
+};
+
+const handleLoadMoreTopics = () => {
+  fetchTopics({ reset: false });
+};
+
+const handleToggleTopicFollow = async (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  if (topicFollowLoadingMap.value[id]) return;
+
+  const isFollowing = Boolean(topic?.is_following);
+  const action = isFollowing ? 2 : 1;
+
+  topicFollowLoadingMap.value = { ...topicFollowLoadingMap.value, [id]: true };
+  try {
+    await toggleTopicFollow(id, action);
+
+    const delta = action === 1 ? 1 : -1;
+    const nextFollowerCount = Math.max(
+      0,
+      Number(topic.follower_count || 0) + delta,
+    );
+
+    topic.is_following = action === 1;
+    topic.follower_count = nextFollowerCount;
+
+    message.success(action === 1 ? "已关注" : "已取消关注");
+  } catch (error) {
+    message.error(error?.message || "操作失败");
+  } finally {
+    const next = { ...topicFollowLoadingMap.value };
+    delete next[id];
+    topicFollowLoadingMap.value = next;
+  }
+};
+
+const handleHeaderSearch = (keyword) => {
+  const value = (keyword || "").trim();
+  if (!value) return;
+
+  if (activeNav.value !== HOME_NAV.TOPICS) {
+    message.info("搜索当前仅支持话题页");
+    return;
+  }
+
+  topicKeyword.value = value;
+  fetchTopics({ reset: true });
+};
+
+watch(headerKeyword, (nextValue, prevValue) => {
+  if (activeNav.value !== HOME_NAV.TOPICS) return;
+  if (!topicKeyword.value) return;
+
+  const next = (nextValue || "").trim();
+  const prev = (prevValue || "").trim();
+  if (prev && !next) {
+    topicKeyword.value = "";
+    fetchTopics({ reset: true });
+  }
+});
+
 onMounted(() => {
   handleFetchList();
 });
@@ -73,7 +209,7 @@ onMounted(() => {
 
 <template>
   <div class="home-page">
-    <AppHeader />
+    <AppHeader v-model="headerKeyword" @search="handleHeaderSearch" />
 
     <div class="container">
       <main class="main">
@@ -112,50 +248,83 @@ onMounted(() => {
             </button>
           </div>
 
-          <a-spin :spinning="loading">
-            <div class="feed">
-              <a-empty v-if="!loading && list.length === 0" description="暂无内容" />
+          <template v-if="activeNav === HOME_NAV.QA">
+            <a-spin :spinning="loading">
+              <div class="feed">
+                <a-empty
+                  v-if="!loading && list.length === 0"
+                  description="暂无内容"
+                />
 
-              <div v-for="item in list" :key="item.id" class="feed-item">
-                <h2 class="title">{{ item.title }}</h2>
+                <div v-for="item in list" :key="item.id" class="feed-item">
+                  <h2 class="title">{{ item.title }}</h2>
 
-                <p class="answer-preview">
-                  <template v-if="item.top_answer">
-                    <span class="answerer">
-                      {{ item.top_answer.respondent?.username || "匿名用户" }}：
-                    </span>
-                    {{ toPreviewText(item.top_answer.content, 260) }}
-                  </template>
-                  <template v-else>
-                    {{ toPreviewText(item.content, 260) }}
-                  </template>
-                </p>
+                  <p class="answer-preview">
+                    <template v-if="item.top_answer">
+                      <span class="answerer">
+                        {{ item.top_answer.respondent?.username || "匿名用户" }}：
+                      </span>
+                      {{ toPreviewText(item.top_answer.content, 260) }}
+                    </template>
+                    <template v-else>
+                      {{ toPreviewText(item.content, 260) }}
+                    </template>
+                  </p>
 
-                <div class="actions">
-                  <button class="vote-btn" :class="{
-                    voted: isUpvoted(item.top_answer?.user_vote_status),
-                  }" type="button" @click="message.info('赞同功能开发中')">
-                    <LikeFilled />
-                    <span class="action-text">
-                      {{ formatCount(item.top_answer?.upvote_count || 0) }} 赞同
-                    </span>
-                  </button>
+                  <div class="actions">
+                    <button
+                      class="vote-btn"
+                      :class="{
+                        voted: isUpvoted(item.top_answer?.user_vote_status),
+                      }"
+                      type="button"
+                      @click="message.info('赞同功能开发中')"
+                    >
+                      <LikeFilled />
+                      <span class="action-text">
+                        {{ formatCount(item.top_answer?.upvote_count || 0) }}
+                        赞同
+                      </span>
+                    </button>
 
-                  <div class="action-meta">
-                    <CommentOutlined />
-                    <span class="action-text">
-                      {{ item.top_answer?.comment_count || 0 }} 条评论
-                    </span>
+                    <div class="action-meta">
+                      <CommentOutlined />
+                      <span class="action-text">
+                        {{ item.top_answer?.comment_count || 0 }} 条评论
+                      </span>
+                    </div>
+
+                    <button
+                      class="action-meta link"
+                      type="button"
+                      @click="handleCollectAnswer"
+                    >
+                      <StarOutlined />
+                      <span class="action-text">收藏</span>
+                    </button>
                   </div>
-
-                  <button class="action-meta link" type="button" @click="handleCollectAnswer">
-                    <StarOutlined />
-                    <span class="action-text">收藏</span>
-                  </button>
                 </div>
               </div>
+            </a-spin>
+          </template>
+
+          <template v-else-if="activeNav === HOME_NAV.TOPICS">
+            <TopicList
+              :topics="topicList"
+              :loading="topicLoading"
+              :loadingMore="topicLoadingMore"
+              :hasMore="topicHasMore"
+              :followLoadingMap="topicFollowLoadingMap"
+              @load-more="handleLoadMoreTopics"
+              @toggle-follow="handleToggleTopicFollow"
+            />
+          </template>
+
+          <template v-else>
+            <div class="placeholder">
+              <a-empty description="开发中" />
             </div>
-          </a-spin>
+          </template>
         </div>
       </main>
 
@@ -290,6 +459,10 @@ onMounted(() => {
 
 .feed {
   padding: 0;
+}
+
+.placeholder {
+  padding: 22px 18px 28px;
 }
 
 .feed-item {
