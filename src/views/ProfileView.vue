@@ -4,6 +4,7 @@ import { message } from "ant-design-vue";
 import { CameraOutlined, EditOutlined, RightOutlined } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import { useAuthStore } from "../stores/auth";
+import { useExpandTransition } from "../composables/useExpandTransition";
 import {
   PROFILE_FOLLOW_TAB,
   PROFILE_FOLLOW_TAB_LIST,
@@ -18,64 +19,15 @@ const handleHeaderSearch = () => {
   message.info("搜索功能开发中");
 };
 
-// 编辑区展开/收起动画：使用动态高度，避免固定 max-height 导致的回弹抖动
-const expandBeforeEnter = (el) => {
-  el.style.boxSizing = "border-box";
-  el.style.willChange = "height, opacity, transform";
-  el.style.height = "0";
-  el.style.opacity = "0";
-  el.style.transform = "translateY(6px)";
-  el.style.overflow = "hidden";
-};
-
-const expandEnter = (el) => {
-  const height = el.scrollHeight;
-  // 触发一次 reflow，确保过渡生效
-  void el.offsetHeight;
-  el.style.transition = "height 0.24s ease, opacity 0.18s ease, transform 0.18s ease";
-  el.style.height = `${height}px`;
-  el.style.opacity = "1";
-  el.style.transform = "translateY(0)";
-};
-
-const expandAfterEnter = (el) => {
-  el.style.boxSizing = "";
-  el.style.willChange = "";
-  el.style.height = "";
-  el.style.opacity = "";
-  el.style.transform = "";
-  el.style.overflow = "";
-  el.style.transition = "";
-};
-
-const expandBeforeLeave = (el) => {
-  el.style.boxSizing = "border-box";
-  el.style.willChange = "height, opacity, transform";
-  // 离开时固定为当前可见高度，避免用 scrollHeight 导致先“撑大”再收起的回弹
-  const { height } = el.getBoundingClientRect();
-  el.style.height = `${height}px`;
-  el.style.opacity = "1";
-  el.style.transform = "translateY(0)";
-  el.style.overflow = "hidden";
-};
-
-const expandLeave = (el) => {
-  void el.offsetHeight;
-  el.style.transition = "height 0.24s ease, opacity 0.18s ease, transform 0.18s ease";
-  el.style.height = "0";
-  el.style.opacity = "0";
-  el.style.transform = "translateY(-6px)";
-};
-
-const expandAfterLeave = (el) => {
-  el.style.boxSizing = "";
-  el.style.willChange = "";
-  el.style.height = "";
-  el.style.opacity = "";
-  el.style.transform = "";
-  el.style.overflow = "";
-  el.style.transition = "";
-};
+// 编辑区展开/收起动画：抽成 composable，避免动画逻辑与业务代码耦合
+const {
+  beforeEnter: expandBeforeEnter,
+  enter: expandEnter,
+  afterEnter: expandAfterEnter,
+  beforeLeave: expandBeforeLeave,
+  leave: expandLeave,
+  afterLeave: expandAfterLeave,
+} = useExpandTransition();
 
 // 页面模式：默认展示内容（回答/提问/收藏/关注），编辑资料时切换到资料编辑区
 const pageMode = ref("feed"); // feed | edit-profile
