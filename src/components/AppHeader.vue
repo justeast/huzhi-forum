@@ -50,7 +50,7 @@ const handleGotoHome = () => {
 };
 
 const handleGotoProfile = () => {
-  message.info("我的主页功能开发中");
+  router.push("/profile");
 };
 
 const handleLogout = () => {
