@@ -12,7 +12,12 @@ import {
 } from "../api/topic";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
-import { HOME_NAV } from "../constants/homeNav";
+import {
+  HOME_FOLLOW_LABEL_MAP,
+  HOME_FOLLOW_TAB_LIST,
+  HOME_MAIN_TAB_LIST,
+  HOME_NAV,
+} from "../constants/homeNav";
 import TopicList from "../components/TopicList.vue";
 import QuestionList from "../components/QuestionList.vue";
 
@@ -64,9 +69,8 @@ const isFollowActive = computed(
 );
 
 const followLabel = computed(() => {
-  if (activeNav.value === HOME_NAV.FOLLOW_QUESTIONS) return "关注的问题";
-  if (activeNav.value === HOME_NAV.FOLLOW_TOPICS) return "关注的话题";
-  return "关注";
+  if (!isFollowActive.value) return "关注";
+  return HOME_FOLLOW_LABEL_MAP[activeNav.value] || "关注";
 });
 
 const handleSelectNav = (key) => {
@@ -490,41 +494,43 @@ onMounted(() => {
       <main class="main">
         <div class="content-card">
           <div class="nav-tabs">
-            <button class="tab" :class="{ active: activeNav === HOME_NAV.QA }" @click="handleSelectNav(HOME_NAV.QA)">
-              问答
-            </button>
-
-            <a-dropdown :trigger="['hover']">
+            <template v-for="tab in HOME_MAIN_TAB_LIST" :key="tab.key">
               <button
-                class="tab follow-tab"
-                :class="{ active: isFollowActive }"
-                @click="handleSelectNav(HOME_NAV.FOLLOW_QUESTIONS)"
+                class="tab"
+                :class="{ active: activeNav === tab.key }"
+                type="button"
+                @click="handleSelectNav(tab.key)"
               >
-                {{ followLabel }}
-                <DownOutlined class="down" />
+                {{ tab.label }}
               </button>
-              <template #overlay>
-                <a-menu class="follow-menu">
-                  <a-menu-item key="follow-questions" :class="[
-                    'follow-item',
-                    { active: activeNav === HOME_NAV.FOLLOW_QUESTIONS },
-                  ]" @click="handleSelectNav(HOME_NAV.FOLLOW_QUESTIONS)">
-                    关注的问题
-                  </a-menu-item>
-                  <a-menu-item key="follow-topics" :class="[
-                    'follow-item',
-                    { active: activeNav === HOME_NAV.FOLLOW_TOPICS },
-                  ]" @click="handleSelectNav(HOME_NAV.FOLLOW_TOPICS)">
-                    关注的话题
-                  </a-menu-item>
-                </a-menu>
-              </template>
-            </a-dropdown>
 
-            <button class="tab" :class="{ active: activeNav === HOME_NAV.TOPICS }"
-              @click="handleSelectNav(HOME_NAV.TOPICS)">
-              话题
-            </button>
+              <a-dropdown v-if="tab.key === HOME_NAV.QA" :trigger="['hover']">
+                <button
+                  class="tab follow-tab"
+                  :class="{ active: isFollowActive }"
+                  type="button"
+                  @click="handleSelectNav(HOME_NAV.FOLLOW_QUESTIONS)"
+                >
+                  {{ followLabel }}
+                  <DownOutlined class="down" />
+                </button>
+                <template #overlay>
+                  <a-menu class="follow-menu">
+                    <a-menu-item
+                      v-for="followTab in HOME_FOLLOW_TAB_LIST"
+                      :key="followTab.key"
+                      :class="[
+                        'follow-item',
+                        { active: activeNav === followTab.key },
+                      ]"
+                      @click="handleSelectNav(followTab.key)"
+                    >
+                      {{ followTab.label }}
+                    </a-menu-item>
+                  </a-menu>
+                </template>
+              </a-dropdown>
+            </template>
           </div>
 
           <template v-if="activeNav === HOME_NAV.QA">

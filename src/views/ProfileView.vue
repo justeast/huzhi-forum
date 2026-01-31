@@ -4,6 +4,12 @@ import { message } from "ant-design-vue";
 import { CameraOutlined, EditOutlined, RightOutlined } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import { useAuthStore } from "../stores/auth";
+import {
+  PROFILE_FOLLOW_TAB,
+  PROFILE_FOLLOW_TAB_LIST,
+  PROFILE_TAB,
+  PROFILE_TAB_LIST,
+} from "../constants/profileNav";
 
 const authStore = useAuthStore();
 
@@ -74,21 +80,8 @@ const expandAfterLeave = (el) => {
 // 页面模式：默认展示内容（回答/提问/收藏/关注），编辑资料时切换到资料编辑区
 const pageMode = ref("feed"); // feed | edit-profile
 
-// 主 Tab：回答 / 提问 / 收藏 / 关注
-const PROFILE_TAB = Object.freeze({
-  ANSWERS: "answers",
-  QUESTIONS: "questions",
-  COLLECTIONS: "collections",
-  FOLLOWS: "follows",
-});
-
-const FOLLOW_SUB_TAB = Object.freeze({
-  QUESTIONS: "follow-questions",
-  TOPICS: "follow-topics",
-});
-
 const activeTab = ref(PROFILE_TAB.ANSWERS);
-const activeFollowTab = ref(FOLLOW_SUB_TAB.QUESTIONS);
+const activeFollowTab = ref(PROFILE_FOLLOW_TAB.QUESTIONS);
 
 // 临时占位数据（后续对接接口再替换）
 const mockAnswerList = ref([
@@ -131,7 +124,7 @@ const currentFeedList = computed(() => {
   if (activeTab.value === PROFILE_TAB.COLLECTIONS) return mockCollectionList.value;
 
   // 关注 Tab
-  if (activeFollowTab.value === FOLLOW_SUB_TAB.QUESTIONS) {
+  if (activeFollowTab.value === PROFILE_FOLLOW_TAB.QUESTIONS) {
     return mockFollowQuestionList.value;
   }
   return mockFollowTopicList.value;
@@ -141,7 +134,7 @@ const handleSelectTab = (tab) => {
   activeTab.value = tab;
   if (tab === PROFILE_TAB.FOLLOWS) {
     // 默认进入“我关注的问题”
-    activeFollowTab.value = FOLLOW_SUB_TAB.QUESTIONS;
+    activeFollowTab.value = PROFILE_FOLLOW_TAB.QUESTIONS;
   }
 };
 
@@ -366,32 +359,28 @@ const saveUsername = () => {
           <main class="main">
             <div class="content-card">
               <div class="profile-tabs">
-                <button class="ptab" :class="{ active: activeTab === PROFILE_TAB.ANSWERS }" type="button"
-                  @click="handleSelectTab(PROFILE_TAB.ANSWERS)">
-                  回答 <span class="count">{{ tabCount[PROFILE_TAB.ANSWERS] }}</span>
-                </button>
-                <button class="ptab" :class="{ active: activeTab === PROFILE_TAB.QUESTIONS }" type="button"
-                  @click="handleSelectTab(PROFILE_TAB.QUESTIONS)">
-                  提问 <span class="count">{{ tabCount[PROFILE_TAB.QUESTIONS] }}</span>
-                </button>
-                <button class="ptab" :class="{ active: activeTab === PROFILE_TAB.COLLECTIONS }" type="button"
-                  @click="handleSelectTab(PROFILE_TAB.COLLECTIONS)">
-                  收藏 <span class="count">{{ tabCount[PROFILE_TAB.COLLECTIONS] }}</span>
-                </button>
-                <button class="ptab" :class="{ active: activeTab === PROFILE_TAB.FOLLOWS }" type="button"
-                  @click="handleSelectTab(PROFILE_TAB.FOLLOWS)">
-                  关注 <span class="count">{{ tabCount[PROFILE_TAB.FOLLOWS] }}</span>
+                <button
+                  v-for="tab in PROFILE_TAB_LIST"
+                  :key="tab.key"
+                  class="ptab"
+                  :class="{ active: activeTab === tab.key }"
+                  type="button"
+                  @click="handleSelectTab(tab.key)"
+                >
+                  {{ tab.label }} <span class="count">{{ tabCount[tab.key] }}</span>
                 </button>
               </div>
 
               <div v-if="activeTab === PROFILE_TAB.FOLLOWS" class="follow-subtabs">
-                <button class="subtab" :class="{ active: activeFollowTab === FOLLOW_SUB_TAB.QUESTIONS }" type="button"
-                  @click="activeFollowTab = FOLLOW_SUB_TAB.QUESTIONS">
-                  我关注的问题
-                </button>
-                <button class="subtab" :class="{ active: activeFollowTab === FOLLOW_SUB_TAB.TOPICS }" type="button"
-                  @click="activeFollowTab = FOLLOW_SUB_TAB.TOPICS">
-                  我关注的话题
+                <button
+                  v-for="tab in PROFILE_FOLLOW_TAB_LIST"
+                  :key="tab.key"
+                  class="subtab"
+                  :class="{ active: activeFollowTab === tab.key }"
+                  type="button"
+                  @click="activeFollowTab = tab.key"
+                >
+                  {{ tab.label }}
                 </button>
               </div>
 
