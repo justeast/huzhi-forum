@@ -22,6 +22,7 @@ const handleHeaderSearch = () => {
 };
 
 const profileLoading = ref(false);
+const profileLoadError = ref("");
 const profileSaving = ref(false);
 const avatarUploading = ref(false);
 const coverUploading = ref(false);
@@ -130,6 +131,7 @@ const applyProfile = (data) => {
 
 const loadUserProfile = async () => {
   if (profileLoading.value) return;
+  profileLoadError.value = "";
   profileLoading.value = true;
   try {
     const data = await fetchUserProfile();
@@ -142,7 +144,9 @@ const loadUserProfile = async () => {
       phone: profile.value.phone,
     };
   } catch (error) {
-    message.error(error?.message || "获取用户信息失败");
+    const msg = error?.message || "获取用户信息失败";
+    profileLoadError.value = msg;
+    message.error(msg);
   } finally {
     profileLoading.value = false;
   }
@@ -164,6 +168,12 @@ const effectiveAvatarUrl = computed(
 const effectiveCoverUrl = computed(
   () => coverPreviewUrl.value || coverUrl.value,
 );
+
+const coverStyle = computed(() => {
+  // 加载中不展示默认封面，避免出现“先默认后真实”的闪一下
+  if (profileLoading.value && !profileLoadError.value) return {};
+  return { backgroundImage: `url(${effectiveCoverUrl.value})` };
+});
 
 const revokeUrlSafely = (url) => {
   if (!url) return;
@@ -473,9 +483,16 @@ onMounted(() => {
   <div class="profile-page">
     <AppHeader v-model="headerKeyword" @search="handleHeaderSearch" />
 
-    <section class="cover" :class="{ editing: pageMode === 'edit-profile' }"
-      :style="{ backgroundImage: `url(${effectiveCoverUrl})` }">
+    <section
+      class="cover"
+      :class="{
+        editing: pageMode === 'edit-profile',
+        loading: profileLoading && !profileLoadError,
+      }"
+      :style="coverStyle"
+    >
       <div class="cover-mask"></div>
+      <div v-if="profileLoading && !profileLoadError" class="cover-skeleton" aria-hidden="true"></div>
 
       <div class="cover-edit">
         <button class="cover-btn" type="button" @click="openCoverPicker">
@@ -509,7 +526,19 @@ onMounted(() => {
                   编辑个人资料
                 </button>
               </div>
-              <div class="hero-sub">{{ profile.bio }}</div>
+              <div v-if="profileLoadError" class="profile-error">
+                <a-alert
+                  type="warning"
+                  show-icon
+                  message="用户信息加载失败"
+                  :description="profileLoadError"
+                />
+              </div>
+              <div v-if="profileLoading && !profileLoadError" class="hero-sub skeleton-lines" aria-hidden="true">
+                <div class="skeleton-line w-70"></div>
+                <div class="skeleton-line w-52"></div>
+              </div>
+              <div v-else class="hero-sub">{{ profile.bio }}</div>
             </div>
 
             <div v-else key="hero-edit" class="hero-edit">
@@ -721,6 +750,19 @@ onMounted(() => {
   background-repeat: no-repeat;
 }
 
+.cover.loading {
+  background: linear-gradient(90deg, #eef2f7 0%, #f6f8fb 40%, #eef2f7 80%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.cover-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
 .cover-mask {
   position: absolute;
   inset: 0;
@@ -837,6 +879,41 @@ onMounted(() => {
 .overlay-text {
   font-size: 13px;
   font-weight: 600;
+}
+
+.profile-error {
+  margin-top: 10px;
+}
+
+.skeleton-lines {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.skeleton-line {
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 40%, #e5e7eb 80%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
+}
+
+.skeleton-line.w-70 {
+  width: 70%;
+}
+
+.skeleton-line.w-52 {
+  width: 52%;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .hero-main {
