@@ -1,10 +1,12 @@
 <script setup>
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { CameraOutlined, EditOutlined, RightOutlined } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import { useAuthStore } from "../stores/auth";
 import { useExpandTransition } from "../composables/useExpandTransition";
+import { fetchUserProfile, patchUserProfile } from "../api/user";
+import { uploadToCos } from "../utils/cosUploader";
 import {
   PROFILE_FOLLOW_TAB,
   PROFILE_FOLLOW_TAB_LIST,
@@ -18,6 +20,11 @@ const headerKeyword = ref("");
 const handleHeaderSearch = () => {
   message.info("搜索功能开发中");
 };
+
+const profileLoading = ref(false);
+const profileSaving = ref(false);
+const avatarUploading = ref(false);
+const coverUploading = ref(false);
 
 // 编辑区展开/收起动画：抽成 composable，避免动画逻辑与业务代码耦合
 const {
@@ -35,7 +42,7 @@ const pageMode = ref("feed"); // feed | edit-profile
 const activeTab = ref(PROFILE_TAB.ANSWERS);
 const activeFollowTab = ref(PROFILE_FOLLOW_TAB.QUESTIONS);
 
-// 临时占位数据（后续对接接口再替换）
+// 临时占位数据（回答/提问/收藏/关注列表，后续对接接口再替换）
 const mockAnswerList = ref([
   { id: "a1", title: "前端开发中，React 相比 Vue 有哪些核心优势？", rightText: "42 个回答" },
   { id: "a2", title: "如何看待 2024 年的人工智能发展趋势？", rightText: "156 个回答" },
@@ -90,18 +97,61 @@ const handleSelectTab = (tab) => {
   }
 };
 
-// 资料展示/编辑数据（后续接接口再替换）
+// 资料展示/编辑数据：首屏用本地登录态兜底，页面挂载后从接口拉取并覆盖
 const profile = ref({
   username: authStore.username || "未登录用户",
-  bio: "正在努力完成毕业设计的计算机系学生",
-  email: "student@huzhi.com",
-  phone: "138****8888",
+  bio: "",
+  email: "",
+  phone: "",
+  avatar: authStore.avatar || "",
+  cover_image: "",
 });
 
-// 图片预览（本地预览，不上传）
+const applyProfile = (data) => {
+  profile.value = {
+    ...profile.value,
+    id: data?.id || profile.value?.id || "",
+    username: data?.username || "",
+    email: data?.email ?? "",
+    phone: data?.phone ?? "",
+    avatar: data?.avatar ?? "",
+    cover_image: data?.cover_image ?? "",
+    bio: data?.bio ?? "",
+    created: data?.created || profile.value?.created || "",
+    modified: data?.modified || profile.value?.modified || "",
+  };
+
+  // 同步 Header 展示（用户名 + 头像）
+  authStore.updateUserInfo({
+    username: profile.value.username,
+    avatar: profile.value.avatar,
+  });
+};
+
+const loadUserProfile = async () => {
+  if (profileLoading.value) return;
+  profileLoading.value = true;
+  try {
+    const data = await fetchUserProfile();
+    applyProfile(data);
+    draft.value = {
+      ...draft.value,
+      username: profile.value.username,
+      bio: profile.value.bio,
+      email: profile.value.email,
+      phone: profile.value.phone,
+    };
+  } catch (error) {
+    message.error(error?.message || "获取用户信息失败");
+  } finally {
+    profileLoading.value = false;
+  }
+};
+
+// 图片预览：选择后先本地预览，同时立即上传并调用接口保存
 const defaultCover = "/default-cover-image.png";
-const coverUrl = ref(defaultCover);
-const avatarUrl = computed(() => authStore.avatarUrl);
+const coverUrl = computed(() => profile.value.cover_image || defaultCover);
+const avatarUrl = computed(() => profile.value.avatar || authStore.avatarUrl);
 const avatarPreviewUrl = ref("");
 const coverPreviewUrl = ref("");
 
@@ -130,27 +180,165 @@ onBeforeUnmount(() => {
 });
 
 const openAvatarPicker = () => {
+  if (avatarUploading.value) return;
   avatarInputRef.value?.click?.();
 };
 
 const openCoverPicker = () => {
+  if (coverUploading.value) return;
   coverInputRef.value?.click?.();
 };
 
-const handleAvatarChange = (event) => {
-  const file = event?.target?.files?.[0];
-  if (!file) return;
-  revokeUrlSafely(avatarPreviewUrl.value);
-  avatarPreviewUrl.value = URL.createObjectURL(file);
-  message.success("头像已更新预览");
+const sanitizeKeyPart = (value) => {
+  const raw = String(value || "").trim();
+  const safe = raw
+    .replace(/[/\\]/g, "_")
+    .replace(/\s+/g, "")
+    .replace(/[^a-zA-Z0-9\u4e00-\u9fa5_-]/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+  return safe || "user";
 };
 
-const handleCoverChange = (event) => {
-  const file = event?.target?.files?.[0];
+const getFileExt = (file) => {
+  const name = String(file?.name || "");
+  const dot = name.lastIndexOf(".");
+  if (dot > -1 && dot < name.length - 1) {
+    const ext = name.slice(dot + 1).trim().toLowerCase();
+    if (ext && ext.length <= 10) return ext;
+  }
+
+  const type = String(file?.type || "");
+  const slash = type.indexOf("/");
+  if (slash > -1 && slash < type.length - 1) {
+    const ext = type.slice(slash + 1).trim().toLowerCase();
+    if (ext && ext.length <= 10) return ext;
+  }
+
+  return "png";
+};
+
+const preloadImage = (url, timeoutMs = 8000) =>
+  new Promise((resolve) => {
+    if (!url) {
+      resolve(false);
+      return;
+    }
+
+    const img = new Image();
+    let done = false;
+
+    const finish = (ok) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(ok);
+    };
+
+    const timer = setTimeout(() => finish(false), timeoutMs);
+    img.onload = () => finish(true);
+    img.onerror = () => finish(false);
+    img.src = url;
+  });
+
+const buildCosKey = (dir, username, file) => {
+  const name = sanitizeKeyPart(username);
+  const ts = Date.now();
+  const ext = getFileExt(file);
+  return `${dir}/${name}_${ts}.${ext}`;
+};
+
+const avatarUploadSeq = ref(0);
+const coverUploadSeq = ref(0);
+
+const handleAvatarChange = async (event) => {
+  const input = event?.target;
+  const file = input?.files?.[0];
   if (!file) return;
+
+  const seq = (avatarUploadSeq.value += 1);
+
+  revokeUrlSafely(avatarPreviewUrl.value);
+  avatarPreviewUrl.value = URL.createObjectURL(file);
+  avatarUploading.value = true;
+
+  try {
+    const key = buildCosKey(
+      "avatar",
+      profile.value.username || authStore.username,
+      file,
+    );
+    const res = await uploadToCos(file, key);
+    if (seq !== avatarUploadSeq.value) return;
+
+    const data = await patchUserProfile({ avatar: res?.url || "" });
+    if (seq !== avatarUploadSeq.value) return;
+
+    applyProfile(data);
+
+    message.success("头像已保存");
+    revokeUrlSafely(avatarPreviewUrl.value);
+    avatarPreviewUrl.value = "";
+  } catch (error) {
+    if (seq === avatarUploadSeq.value) {
+      message.error(error?.message || "头像上传失败");
+      revokeUrlSafely(avatarPreviewUrl.value);
+      avatarPreviewUrl.value = "";
+    }
+  } finally {
+    if (seq === avatarUploadSeq.value) avatarUploading.value = false;
+    if (input) input.value = "";
+  }
+};
+
+const handleCoverChange = async (event) => {
+  const input = event?.target;
+  const file = input?.files?.[0];
+  if (!file) return;
+
+  const seq = (coverUploadSeq.value += 1);
+
   revokeUrlSafely(coverPreviewUrl.value);
   coverPreviewUrl.value = URL.createObjectURL(file);
-  message.success("封面已更新预览");
+  const localPreviewUrl = coverPreviewUrl.value;
+  coverUploading.value = true;
+
+  try {
+    const key = buildCosKey(
+      "cover",
+      profile.value.username || authStore.username,
+      file,
+    );
+    const res = await uploadToCos(file, key);
+    if (seq !== coverUploadSeq.value) return;
+
+    const data = await patchUserProfile({ cover_image: res?.url || "" });
+    if (seq !== coverUploadSeq.value) return;
+
+    applyProfile(data);
+
+    message.success("封面已保存");
+
+    // 等远端封面图加载完成后再切换，避免从 blob 预览切换到远端时出现闪烁
+    const remoteUrl = String(data?.cover_image || "").trim();
+    const ok = await preloadImage(remoteUrl);
+    if (seq !== coverUploadSeq.value) return;
+    if (ok && coverPreviewUrl.value === localPreviewUrl) {
+      revokeUrlSafely(localPreviewUrl);
+      coverPreviewUrl.value = "";
+    }
+  } catch (error) {
+    if (seq === coverUploadSeq.value) {
+      message.error(error?.message || "封面上传失败");
+      if (coverPreviewUrl.value === localPreviewUrl) {
+        revokeUrlSafely(localPreviewUrl);
+        coverPreviewUrl.value = "";
+      }
+    }
+  } finally {
+    if (seq === coverUploadSeq.value) coverUploading.value = false;
+    if (input) input.value = "";
+  }
 };
 
 // 资料编辑：一次只编辑一个字段（用户名编辑行与其它字段互斥）
@@ -197,10 +385,27 @@ const openFieldEditor = (field) => {
   editorOpen.value = true;
 };
 
-const saveField = (field) => {
-  profile.value[field] = draft.value[field];
-  message.success("已保存");
-  editorOpen.value = false;
+const toNullIfBlank = (value) => {
+  const str = String(value ?? "").trim();
+  return str ? str : null;
+};
+
+const saveField = async (field) => {
+  if (profileSaving.value) return;
+
+  const payloadValue = toNullIfBlank(draft.value[field]);
+  profileSaving.value = true;
+  try {
+    const data = await patchUserProfile({ [field]: payloadValue });
+    applyProfile(data);
+    draft.value[field] = profile.value[field];
+    message.success("已保存");
+    editorOpen.value = false;
+  } catch (error) {
+    message.error(error?.message || "保存失败");
+  } finally {
+    profileSaving.value = false;
+  }
 };
 
 const cancelFieldEdit = (field) => {
@@ -236,11 +441,32 @@ const cancelUsernameEdit = () => {
   isEditingUsername.value = false;
 };
 
-const saveUsername = () => {
-  profile.value.username = draft.value.username;
-  message.success("用户名已保存");
-  isEditingUsername.value = false;
+const saveUsername = async () => {
+  if (profileSaving.value) return;
+
+  const username = String(draft.value.username ?? "").trim();
+  if (!username) {
+    message.warning("用户名不能为空");
+    return;
+  }
+
+  profileSaving.value = true;
+  try {
+    const data = await patchUserProfile({ username });
+    applyProfile(data);
+    draft.value.username = profile.value.username;
+    message.success("用户名已保存");
+    isEditingUsername.value = false;
+  } catch (error) {
+    message.error(error?.message || "用户名保存失败");
+  } finally {
+    profileSaving.value = false;
+  }
 };
+
+onMounted(() => {
+  loadUserProfile();
+});
 </script>
 
 <template>
@@ -385,8 +611,8 @@ const saveUsername = () => {
                       <div class="value">
                         <a-input v-model:value="draft.username" size="large" class="edit-input" />
                         <div class="actions">
-                          <a-button type="primary" @click.stop="saveUsername">保存</a-button>
-                          <a-button @click.stop="cancelUsernameEdit">取消</a-button>
+                          <a-button :loading="profileSaving" type="primary" @click.stop="saveUsername">保存</a-button>
+                          <a-button :disabled="profileSaving" @click.stop="cancelUsernameEdit">取消</a-button>
                         </div>
                       </div>
                     </div>
@@ -409,8 +635,8 @@ const saveUsername = () => {
                       <div v-if="editorOpen && editingField === 'bio'" class="editor">
                         <a-textarea v-model:value="draft.bio" :rows="3" class="edit-textarea" />
                         <div class="actions">
-                          <a-button type="primary" @click.stop="saveField('bio')">保存</a-button>
-                          <a-button @click.stop="cancelFieldEdit('bio')">取消</a-button>
+                          <a-button :loading="profileSaving" type="primary" @click.stop="saveField('bio')">保存</a-button>
+                          <a-button :disabled="profileSaving" @click.stop="cancelFieldEdit('bio')">取消</a-button>
                         </div>
                       </div>
                     </Transition>
@@ -433,8 +659,8 @@ const saveUsername = () => {
                       <div v-if="editorOpen && editingField === 'email'" class="editor">
                         <a-input v-model:value="draft.email" size="large" class="edit-input" />
                         <div class="actions">
-                          <a-button type="primary" @click.stop="saveField('email')">保存</a-button>
-                          <a-button @click.stop="cancelFieldEdit('email')">取消</a-button>
+                          <a-button :loading="profileSaving" type="primary" @click.stop="saveField('email')">保存</a-button>
+                          <a-button :disabled="profileSaving" @click.stop="cancelFieldEdit('email')">取消</a-button>
                         </div>
                       </div>
                     </Transition>
@@ -457,8 +683,8 @@ const saveUsername = () => {
                       <div v-if="editorOpen && editingField === 'phone'" class="editor">
                         <a-input v-model:value="draft.phone" size="large" class="edit-input" />
                         <div class="actions">
-                          <a-button type="primary" @click.stop="saveField('phone')">保存</a-button>
-                          <a-button @click.stop="cancelFieldEdit('phone')">取消</a-button>
+                          <a-button :loading="profileSaving" type="primary" @click.stop="saveField('phone')">保存</a-button>
+                          <a-button :disabled="profileSaving" @click.stop="cancelFieldEdit('phone')">取消</a-button>
                         </div>
                       </div>
                     </Transition>

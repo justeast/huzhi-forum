@@ -60,6 +60,26 @@ export const useAuthStore = defineStore("auth", {
         avatar: this.avatar,
       });
     },
+    // 更新用户展示信息（用于个人资料修改后同步 Header 展示）
+    updateUserInfo(payload) {
+      if (!payload) return;
+
+      if (payload.username !== undefined) {
+        this.username = payload.username || "";
+      }
+
+      if (payload.avatar !== undefined) {
+        this.avatar = payload.avatar || "";
+      }
+
+      writeStorage({
+        accessToken: this.accessToken,
+        refreshToken: this.refreshToken,
+        userId: this.userId,
+        username: this.username,
+        avatar: this.avatar,
+      });
+    },
     logout() {
       this.accessToken = "";
       this.refreshToken = "";
