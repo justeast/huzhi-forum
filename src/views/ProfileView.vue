@@ -5,7 +5,11 @@ import { CameraOutlined, EditOutlined, RightOutlined } from "@ant-design/icons-v
 import AppHeader from "../components/AppHeader.vue";
 import { useAuthStore } from "../stores/auth";
 import { useExpandTransition } from "../composables/useExpandTransition";
-import { fetchUserProfile, patchUserProfile } from "../api/user";
+import {
+  fetchUserAchievements,
+  fetchUserProfile,
+  patchUserProfile,
+} from "../api/user";
 import { uploadToCos } from "../utils/cosUploader";
 import {
   PROFILE_FOLLOW_TAB,
@@ -26,6 +30,13 @@ const profileLoadError = ref("");
 const profileSaving = ref(false);
 const avatarUploading = ref(false);
 const coverUploading = ref(false);
+
+const achievementLoading = ref(false);
+const achievementError = ref("");
+const achievements = ref({
+  agree_count: 0,
+  answer_count: 0,
+});
 
 // 编辑区展开/收起动画：抽成 composable，避免动画逻辑与业务代码耦合
 const {
@@ -149,6 +160,30 @@ const loadUserProfile = async () => {
     message.error(msg);
   } finally {
     profileLoading.value = false;
+  }
+};
+
+const applyAchievements = (data) => {
+  achievements.value = {
+    agree_count: Math.max(0, Number(data?.agree_count || 0)),
+    answer_count: Math.max(0, Number(data?.answer_count || 0)),
+  };
+};
+
+const loadUserAchievements = async () => {
+  if (achievementLoading.value) return;
+
+  achievementError.value = "";
+  achievementLoading.value = true;
+  try {
+    const data = await fetchUserAchievements();
+    applyAchievements(data);
+  } catch (error) {
+    const msg = error?.message || "个人成就加载失败";
+    achievementError.value = msg;
+    applyAchievements({ agree_count: 0, answer_count: 0 });
+  } finally {
+    achievementLoading.value = false;
   }
 };
 
@@ -476,6 +511,7 @@ const saveUsername = async () => {
 
 onMounted(() => {
   loadUserProfile();
+  loadUserAchievements();
 });
 </script>
 
@@ -606,16 +642,25 @@ onMounted(() => {
             <a-card class="side-card" :bordered="false">
               <div class="side-title">个人成就</div>
               <div class="achievements">
-                <div class="ach-item">
-                  <span class="ach-label">获得</span>
-                  <span class="ach-value">36174</span>
-                  <span class="ach-suffix">次赞同</span>
+                <div v-if="achievementLoading" class="skeleton-lines" aria-hidden="true">
+                  <div class="skeleton-line w-70"></div>
+                  <div class="skeleton-line w-52"></div>
                 </div>
-                <div class="ach-item">
-                  <span class="ach-label">作出</span>
-                  <span class="ach-value">45</span>
-                  <span class="ach-suffix">次回答</span>
-                </div>
+                <template v-else>
+                  <div class="ach-item">
+                    <span class="ach-label">获得</span>
+                    <span class="ach-value">{{ achievements.agree_count }}</span>
+                    <span class="ach-suffix">次赞同</span>
+                  </div>
+                  <div class="ach-item">
+                    <span class="ach-label">作出</span>
+                    <span class="ach-value">{{ achievements.answer_count }}</span>
+                    <span class="ach-suffix">次回答</span>
+                  </div>
+                  <div v-if="achievementError" class="ach-error">
+                    {{ achievementError }}，已显示为 0
+                  </div>
+                </template>
               </div>
             </a-card>
 
@@ -1139,6 +1184,13 @@ onMounted(() => {
 .achievements {
   display: grid;
   gap: 12px;
+}
+
+.ach-error {
+  font-size: 12px;
+  color: #94a3b8;
+  font-weight: 700;
+  line-height: 1.4;
 }
 
 .ach-item {

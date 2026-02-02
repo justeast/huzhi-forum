@@ -19,3 +19,12 @@ export const patchUserProfile = async (payload = {}) => {
   return res.data.data;
 };
 
+// 获取用户个人成就（GET /user/achievements/）
+// 返回：{ agree_count: number, answer_count: number }
+export const fetchUserAchievements = async () => {
+  const res = await http.get("/user/achievements/");
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取用户个人成就失败");
+  }
+  return res.data.data;
+};
