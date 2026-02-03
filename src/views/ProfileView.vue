@@ -1,7 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
-import { CameraOutlined, EditOutlined, RightOutlined } from "@ant-design/icons-vue";
+import {
+  CameraOutlined,
+  EditOutlined,
+  LockOutlined,
+  PlusOutlined,
+  RightOutlined,
+} from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import { useAuthStore } from "../stores/auth";
 import { useExpandTransition } from "../composables/useExpandTransition";
@@ -11,6 +17,8 @@ import {
   patchUserProfile,
 } from "../api/user";
 import { uploadToCos } from "../utils/cosUploader";
+import { createCollectionFolder, fetchAllCollections } from "../api/collection";
+import { formatDateTimeMinute } from "../utils/format";
 import {
   PROFILE_FOLLOW_TAB,
   PROFILE_FOLLOW_TAB_LIST,
@@ -38,6 +46,20 @@ const achievements = ref({
   answer_count: 0,
 });
 
+const collectionLoading = ref(false);
+const collectionError = ref("");
+// 收藏夹数量：加载完成前为 null（未知），Tab 数量位置显示骨架占位
+const collectionCount = ref(null);
+const collectionList = ref([]);
+
+const createCollectionOpen = ref(false);
+const createCollectionLoading = ref(false);
+const createCollectionForm = ref({
+  title: "",
+  description: "",
+  is_public: true,
+});
+
 // 编辑区展开/收起动画：抽成 composable，避免动画逻辑与业务代码耦合
 const {
   beforeEnter: expandBeforeEnter,
@@ -54,7 +76,7 @@ const pageMode = ref("feed"); // feed | edit-profile
 const activeTab = ref(PROFILE_TAB.ANSWERS);
 const activeFollowTab = ref(PROFILE_FOLLOW_TAB.QUESTIONS);
 
-// 临时占位数据（回答/提问/收藏/关注列表，后续对接接口再替换）
+// 临时占位数据（回答/提问/关注列表，后续对接接口再替换）
 const mockAnswerList = ref([
   { id: "a1", title: "前端开发中，React 相比 Vue 有哪些核心优势？", rightText: "42 个回答" },
   { id: "a2", title: "如何看待 2024 年的人工智能发展趋势？", rightText: "156 个回答" },
@@ -64,11 +86,6 @@ const mockAnswerList = ref([
 const mockQuestionList = ref([
   { id: "q1", title: "易上手的编程语言有哪些？", rightText: "3 个回答" },
   { id: "q2", title: "如何系统学习计算机网络？", rightText: "12 个回答" },
-]);
-
-const mockCollectionList = ref([
-  { id: "c1", title: "机器学习入门路线推荐", rightText: "收藏于 2 天前" },
-  { id: "c2", title: "如何写出高质量的前端简历？", rightText: "收藏于 1 周前" },
 ]);
 
 const mockFollowQuestionList = ref([
@@ -84,7 +101,7 @@ const mockFollowTopicList = ref([
 const tabCount = computed(() => ({
   [PROFILE_TAB.ANSWERS]: mockAnswerList.value.length,
   [PROFILE_TAB.QUESTIONS]: mockQuestionList.value.length,
-  [PROFILE_TAB.COLLECTIONS]: mockCollectionList.value.length,
+  [PROFILE_TAB.COLLECTIONS]: collectionCount.value,
   [PROFILE_TAB.FOLLOWS]:
     mockFollowQuestionList.value.length + mockFollowTopicList.value.length,
 }));
@@ -92,7 +109,8 @@ const tabCount = computed(() => ({
 const currentFeedList = computed(() => {
   if (activeTab.value === PROFILE_TAB.ANSWERS) return mockAnswerList.value;
   if (activeTab.value === PROFILE_TAB.QUESTIONS) return mockQuestionList.value;
-  if (activeTab.value === PROFILE_TAB.COLLECTIONS) return mockCollectionList.value;
+  // 收藏 Tab 使用独立面板渲染，这里返回空数组用于兜底
+  if (activeTab.value === PROFILE_TAB.COLLECTIONS) return [];
 
   // 关注 Tab
   if (activeFollowTab.value === PROFILE_FOLLOW_TAB.QUESTIONS) {
@@ -185,6 +203,90 @@ const loadUserAchievements = async () => {
   } finally {
     achievementLoading.value = false;
   }
+};
+
+const mergeCollectionById = (oldList, newList) => {
+  const map = new Map();
+  (oldList || []).forEach((item) => {
+    if (!item?.id) return;
+    map.set(item.id, item);
+  });
+  (newList || []).forEach((item) => {
+    if (!item?.id) return;
+    map.set(item.id, item);
+  });
+  return Array.from(map.values());
+};
+
+// 收藏夹：进入个人页就加载（自动翻页拉全量）
+const loadCollections = async () => {
+  if (collectionLoading.value) return;
+
+  collectionError.value = "";
+  collectionLoading.value = true;
+  try {
+    const data = await fetchAllCollections();
+    collectionCount.value = Math.max(0, Number(data?.count || 0));
+    collectionList.value = data?.results || [];
+  } catch (error) {
+    const msg = error?.message || "收藏夹加载失败";
+    collectionError.value = msg;
+    collectionCount.value = 0;
+    collectionList.value = [];
+  } finally {
+    collectionLoading.value = false;
+  }
+};
+
+const formatCollectionUpdated = (item) => {
+  const value = formatDateTimeMinute(item?.modified || item?.created);
+  return value ? `更新于 ${value}` : "";
+};
+
+const openCreateCollection = () => {
+  createCollectionForm.value = {
+    title: "",
+    description: "",
+    is_public: true,
+  };
+  createCollectionOpen.value = true;
+};
+
+const handleCreateCollection = async () => {
+  if (createCollectionLoading.value) return;
+
+  const title = String(createCollectionForm.value.title || "").trim();
+  if (!title) {
+    message.warning("请输入收藏夹标题");
+    return;
+  }
+
+  createCollectionLoading.value = true;
+  try {
+    const created = await createCollectionFolder({
+      title,
+      description: String(createCollectionForm.value.description || "").trim(),
+      is_public: Boolean(createCollectionForm.value.is_public),
+    });
+
+    collectionCount.value = Number(collectionCount.value || 0) + 1;
+    collectionList.value = mergeCollectionById([created], collectionList.value);
+    createCollectionOpen.value = false;
+    message.success("收藏夹已创建");
+  } catch (error) {
+    message.error(error?.message || "创建收藏夹失败");
+  } finally {
+    createCollectionLoading.value = false;
+  }
+};
+
+const handleClickCollection = (item) => {
+  if (!item?.id) return;
+  message.info("收藏夹详情功能开发中");
+};
+
+const handleRetryCollections = () => {
+  loadCollections();
 };
 
 // 图片预览：选择后先本地预览，同时立即上传并调用接口保存
@@ -512,6 +614,7 @@ const saveUsername = async () => {
 onMounted(() => {
   loadUserProfile();
   loadUserAchievements();
+  loadCollections();
 });
 </script>
 
@@ -602,16 +705,36 @@ onMounted(() => {
           <main class="main">
             <div class="content-card">
               <div class="profile-tabs">
-                <button
-                  v-for="tab in PROFILE_TAB_LIST"
-                  :key="tab.key"
-                  class="ptab"
-                  :class="{ active: activeTab === tab.key }"
-                  type="button"
-                  @click="handleSelectTab(tab.key)"
-                >
-                  {{ tab.label }} <span class="count">{{ tabCount[tab.key] }}</span>
-                </button>
+                <div class="tabs-left">
+                  <button
+                    v-for="tab in PROFILE_TAB_LIST"
+                    :key="tab.key"
+                    class="ptab"
+                    :class="{ active: activeTab === tab.key }"
+                    type="button"
+                    @click="handleSelectTab(tab.key)"
+                  >
+                    {{ tab.label }}
+                    <span
+                      v-if="tab.key === PROFILE_TAB.COLLECTIONS && collectionLoading"
+                      class="count-skeleton"
+                      aria-hidden="true"
+                    ></span>
+                    <span v-else-if="tabCount[tab.key] !== null" class="count">{{ tabCount[tab.key] }}</span>
+                  </button>
+                </div>
+
+                <div class="tabs-right">
+                  <button
+                    v-if="activeTab === PROFILE_TAB.COLLECTIONS"
+                    class="create-collection-btn"
+                    type="button"
+                    @click="openCreateCollection"
+                  >
+                    <PlusOutlined />
+                    <span>新建收藏夹</span>
+                  </button>
+                </div>
               </div>
 
               <div v-if="activeTab === PROFILE_TAB.FOLLOWS" class="follow-subtabs">
@@ -627,10 +750,62 @@ onMounted(() => {
                 </button>
               </div>
 
-              <div class="feed-list">
+              <div v-if="activeTab === PROFILE_TAB.COLLECTIONS" class="collection-panel">
+                <div v-if="collectionLoading" class="collection-grid" aria-hidden="true">
+                  <div v-for="n in 4" :key="n" class="collection-card skeleton-card">
+                    <div class="skeleton-line w-70"></div>
+                    <div class="skeleton-line w-52"></div>
+                    <div class="skeleton-line w-40"></div>
+                  </div>
+                </div>
+
+                <div v-else-if="collectionError" class="collection-error">
+                  <a-empty description="收藏夹加载失败" />
+                  <div class="collection-error-text">{{ collectionError }}</div>
+                  <a-button type="primary" @click="handleRetryCollections">重试</a-button>
+                </div>
+
+                <div v-else class="collection-grid">
+                  <a-empty v-if="collectionList.length === 0" description="暂无收藏夹" />
+
+                  <div
+                    v-for="item in collectionList"
+                    v-else
+                    :key="item.id"
+                    class="collection-card"
+                    role="button"
+                    tabindex="0"
+                    @click="handleClickCollection(item)"
+                  >
+                    <div class="collection-top">
+                      <div class="collection-title">{{ item.title }}</div>
+                      <LockOutlined v-if="item.is_public === false" class="collection-lock" />
+                    </div>
+
+                    <div class="collection-desc">
+                      {{ item.description || "暂无简介" }}
+                    </div>
+
+                    <div class="collection-bottom">
+                      <div class="collection-count">{{ item.answer_count || 0 }} 条内容</div>
+                      <div class="collection-updated">
+                        {{ formatCollectionUpdated(item) }}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div v-else class="feed-list">
                 <a-empty v-if="currentFeedList.length === 0" description="暂无内容" />
-                <div v-for="item in currentFeedList" :key="item.id" class="feed-row" role="button" tabindex="0"
-                  @click="message.info('详情功能开发中')">
+                <div
+                  v-for="item in currentFeedList"
+                  :key="item.id"
+                  class="feed-row"
+                  role="button"
+                  tabindex="0"
+                  @click="message.info('详情功能开发中')"
+                >
                   <div class="row-title">{{ item.title }}</div>
                   <div class="row-right">{{ item.rightText }}</div>
                 </div>
@@ -770,6 +945,43 @@ onMounted(() => {
         </section>
       </Transition>
     </div>
+
+    <a-modal
+      v-model:open="createCollectionOpen"
+      title="新建收藏夹"
+      :confirm-loading="createCollectionLoading"
+      ok-text="创建"
+      cancel-text="取消"
+      @ok="handleCreateCollection"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="收藏夹标题" required>
+          <a-input
+            v-model:value="createCollectionForm.title"
+            placeholder="请输入收藏夹标题"
+            :maxlength="40"
+            show-count
+          />
+        </a-form-item>
+
+        <a-form-item label="收藏夹简介">
+          <a-textarea
+            v-model:value="createCollectionForm.description"
+            placeholder="简单介绍一下这个收藏夹（可选）"
+            :rows="3"
+            :maxlength="120"
+            show-count
+          />
+        </a-form-item>
+
+        <a-form-item label="是否公开">
+          <a-switch v-model:checked="createCollectionForm.is_public" />
+          <span class="public-hint">
+            {{ createCollectionForm.is_public ? "公开" : "私密" }}
+          </span>
+        </a-form-item>
+      </a-form>
+    </a-modal>
   </div>
 </template>
 
@@ -952,6 +1164,10 @@ onMounted(() => {
   width: 52%;
 }
 
+.skeleton-line.w-40 {
+  width: 40%;
+}
+
 @keyframes skeleton-shimmer {
   0% {
     background-position: 200% 0;
@@ -1053,9 +1269,46 @@ onMounted(() => {
 .profile-tabs {
   display: flex;
   align-items: center;
-  gap: 22px;
+  justify-content: space-between;
   padding: 14px 18px;
   border-bottom: 1px solid var(--line);
+}
+
+.tabs-left {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+}
+
+.tabs-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.create-collection-btn {
+  border: 1px solid var(--brand-color);
+  background: #fff;
+  color: var(--brand-color);
+  padding: 10px 16px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.create-collection-btn:hover {
+  background: var(--brand-color);
+  color: #fff;
+}
+
+.public-hint {
+  margin-left: 10px;
+  color: #64748b;
+  font-weight: 700;
 }
 
 .ptab {
@@ -1073,6 +1326,18 @@ onMounted(() => {
   margin-left: 6px;
   color: #94a3b8;
   font-weight: 700;
+}
+
+.count-skeleton {
+  display: inline-block;
+  vertical-align: middle;
+  margin-left: 6px;
+  width: 18px;
+  height: 14px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #e5e7eb 0%, #f3f4f6 40%, #e5e7eb 80%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.2s ease-in-out infinite;
 }
 
 .ptab.active {
@@ -1122,6 +1387,123 @@ onMounted(() => {
 
 .subtab:hover {
   color: var(--brand-color);
+}
+
+.collection-panel {
+  padding: 18px;
+}
+
+.collection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.collection-error {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 18px 0 8px;
+}
+
+.collection-error-text {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 13px;
+  text-align: center;
+  max-width: 520px;
+}
+
+.collection-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #fff;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+  min-height: 112px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 10px;
+}
+
+.collection-card:hover {
+  border-color: rgba(120, 200, 65, 0.55);
+  box-shadow: 0 14px 32px rgba(15, 23, 42, 0.12);
+  transform: translateY(-2px);
+}
+
+.collection-card:hover .collection-title {
+  color: var(--brand-color);
+}
+
+.collection-card.skeleton-card {
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.collection-card.skeleton-card:hover {
+  border-color: #e5e7eb;
+  box-shadow: none;
+  transform: none;
+}
+
+.collection-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collection-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: #111827;
+  line-height: 1.2;
+}
+
+.collection-lock {
+  color: #94a3b8;
+  font-size: 16px;
+}
+
+.collection-desc {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 14px;
+  line-height: 1.5;
+  display: -webkit-box;
+  line-clamp: 2;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.collection-bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.collection-count {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.collection-updated {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .feed-list {
@@ -1357,6 +1739,10 @@ onMounted(() => {
 
 @media (max-width: 1100px) {
   .content {
+    grid-template-columns: 1fr;
+  }
+
+  .collection-grid {
     grid-template-columns: 1fr;
   }
 

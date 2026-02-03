@@ -12,3 +12,24 @@ export function formatCount(value) {
   const k = (num / 1000).toFixed(1).replace(/\.0$/, "");
   return `${k}k`;
 }
+
+// 时间格式化：输出到“分钟”（默认 zh-CN），如 2026/02/03 14:05
+export function formatDateTimeMinute(value, locale = "zh-CN") {
+  if (value === null || value === undefined || value === "") return "";
+
+  try {
+    const d = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(d.getTime())) return "";
+
+    return d.toLocaleString(locale, {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return "";
+  }
+}
