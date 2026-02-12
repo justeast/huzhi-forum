@@ -10,13 +10,18 @@ import {
   RightOutlined,
 } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
+import TopicList from "../components/TopicList.vue";
+import FollowQuestionList from "../components/FollowQuestionList.vue";
 import { useAuthStore } from "../stores/auth";
+import { useTopicFollowStore } from "../stores/topicFollow";
 import { useExpandTransition } from "../composables/useExpandTransition";
 import {
   fetchUserAchievements,
   fetchUserProfile,
   patchUserProfile,
 } from "../api/user";
+import { fetchFollowingQuestionList } from "../api/question";
+import { fetchFollowingTopics, toggleTopicFollow } from "../api/topic";
 import { uploadToCos } from "../utils/cosUploader";
 import {
   createCollectionFolder,
@@ -33,6 +38,7 @@ import {
 } from "../constants/profileNav";
 
 const authStore = useAuthStore();
+const topicFollowStore = useTopicFollowStore();
 
 const headerKeyword = ref("");
 const handleHeaderSearch = () => {
@@ -95,7 +101,7 @@ const pageMode = ref("feed"); // feed | edit-profile
 const activeTab = ref(PROFILE_TAB.ANSWERS);
 const activeFollowTab = ref(PROFILE_FOLLOW_TAB.QUESTIONS);
 
-// 临时占位数据（回答/提问/关注列表，后续对接接口再替换）
+// 临时占位数据（回答/提问列表，后续对接接口再替换）
 const mockAnswerList = ref([
   { id: "a1", title: "前端开发中，React 相比 Vue 有哪些核心优势？", rightText: "42 个回答" },
   { id: "a2", title: "如何看待 2024 年的人工智能发展趋势？", rightText: "156 个回答" },
@@ -107,35 +113,191 @@ const mockQuestionList = ref([
   { id: "q2", title: "如何系统学习计算机网络？", rightText: "12 个回答" },
 ]);
 
-const mockFollowQuestionList = ref([
-  { id: "fq1", title: "前端开发中，React 相比 Vue 有哪些核心优势？", rightText: "42 个回答" },
-  { id: "fq2", title: "如何看待 2024 年的人工智能发展趋势？", rightText: "156 个回答" },
-]);
+// 关注-问题：仅展示标题 + 回答数，支持无限滚动加载更多
+const FOLLOW_QUESTION_PAGE_SIZE = 10;
+const followQuestionList = ref([]);
+const followQuestionPage = ref(1);
+const followQuestionHasMore = ref(true);
+const followQuestionLoading = ref(false);
+const followQuestionLoadingMore = ref(false);
 
-const mockFollowTopicList = ref([
-  { id: "ft1", title: "前端开发", rightText: "12.5k 人关注" },
-  { id: "ft2", title: "机器学习", rightText: "56k 人关注" },
-]);
+// 关注-话题：复用 TopicList，支持取消关注并从列表移除
+const FOLLOW_TOPIC_PAGE_SIZE = 20;
+const followTopicList = ref([]);
+const followTopicPage = ref(1);
+const followTopicHasMore = ref(true);
+const followTopicLoading = ref(false);
+const followTopicLoadingMore = ref(false);
+const followTopicFollowLoadingMap = ref({});
+
+const mergeById = (items, incoming) => {
+  const map = new Map((items || []).map((t) => [t?.id, t]));
+  (incoming || []).forEach((t) => {
+    if (!t?.id) return;
+    if (map.has(t.id)) {
+      map.set(t.id, { ...map.get(t.id), ...t });
+    } else {
+      map.set(t.id, t);
+    }
+  });
+  return Array.from(map.values());
+};
+
+const fetchFollowQuestions = async ({ reset } = { reset: false }) => {
+  if (followQuestionLoading.value || followQuestionLoadingMore.value) return;
+  if (!reset && !followQuestionHasMore.value) return;
+
+  if (reset) {
+    followQuestionPage.value = 1;
+    followQuestionHasMore.value = true;
+    followQuestionList.value = [];
+    followQuestionLoading.value = true;
+  } else {
+    followQuestionLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : followQuestionPage.value + 1;
+
+  try {
+    const data = await fetchFollowingQuestionList({
+      page,
+      size: FOLLOW_QUESTION_PAGE_SIZE,
+    });
+    const results = data?.results || [];
+    followQuestionList.value = mergeById(followQuestionList.value, results);
+    followQuestionPage.value = page;
+    followQuestionHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    // 401 由 http 拦截器统一处理，这里不再重复提示/跳转
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取关注的问题失败");
+  } finally {
+    followQuestionLoading.value = false;
+    followQuestionLoadingMore.value = false;
+  }
+};
+
+const ensureFollowQuestionsLoaded = () => {
+  if (followQuestionLoading.value) return;
+  if (followQuestionList.value.length > 0) return;
+  fetchFollowQuestions({ reset: true });
+};
+
+const handleLoadMoreFollowQuestions = () => {
+  fetchFollowQuestions({ reset: false });
+};
+
+const fetchFollowTopics = async ({ reset } = { reset: false }) => {
+  if (followTopicLoading.value || followTopicLoadingMore.value) return;
+  if (!reset && !followTopicHasMore.value) return;
+
+  if (reset) {
+    followTopicPage.value = 1;
+    followTopicHasMore.value = true;
+    followTopicList.value = [];
+    followTopicLoading.value = true;
+  } else {
+    followTopicLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : followTopicPage.value + 1;
+
+  try {
+    const data = await fetchFollowingTopics({
+      page,
+      size: FOLLOW_TOPIC_PAGE_SIZE,
+    });
+    const results = topicFollowStore.applyToList(data?.results || []);
+    followTopicList.value = mergeById(followTopicList.value, results);
+    followTopicPage.value = page;
+    followTopicHasMore.value = Boolean(data?.next);
+    if (reset) topicFollowStore.clearFollowTopicsDirty();
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取关注的话题失败");
+  } finally {
+    followTopicLoading.value = false;
+    followTopicLoadingMore.value = false;
+  }
+};
+
+const ensureFollowTopicsLoaded = () => {
+  if (followTopicLoading.value) return;
+  if (followTopicList.value.length > 0 && !topicFollowStore.followTopicsDirty) {
+    return;
+  }
+  fetchFollowTopics({ reset: true });
+};
+
+const handleLoadMoreFollowTopics = () => {
+  fetchFollowTopics({ reset: false });
+};
+
+const handleToggleFollowTopic = async (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  if (followTopicFollowLoadingMap.value[id]) return;
+
+  const isFollowing = Boolean(topic?.is_following);
+  const action = isFollowing ? 2 : 1;
+
+  followTopicFollowLoadingMap.value = {
+    ...followTopicFollowLoadingMap.value,
+    [id]: true,
+  };
+
+  try {
+    await toggleTopicFollow(id, action);
+
+    const delta = action === 1 ? 1 : -1;
+    const nextFollowerCount = Math.max(
+      0,
+      Number(topic?.follower_count || 0) + delta,
+    );
+
+    if (action === 2) {
+      topicFollowStore.setTopicState(id, {
+        is_following: false,
+        follower_count: nextFollowerCount,
+      });
+      topicFollowStore.markFollowTopicsDirty();
+
+      followTopicList.value = (followTopicList.value || []).filter(
+        (t) => t?.id !== id,
+      );
+      message.success("已取消关注");
+      return;
+    }
+
+    topic.is_following = true;
+    topic.follower_count = nextFollowerCount;
+    topicFollowStore.setTopicState(id, {
+      is_following: true,
+      follower_count: nextFollowerCount,
+    });
+    topicFollowStore.markFollowTopicsDirty();
+    message.success("已关注");
+  } catch (error) {
+    message.error(error?.message || "操作失败");
+  } finally {
+    const next = { ...followTopicFollowLoadingMap.value };
+    delete next[id];
+    followTopicFollowLoadingMap.value = next;
+  }
+};
 
 const tabCount = computed(() => ({
   [PROFILE_TAB.ANSWERS]: mockAnswerList.value.length,
   [PROFILE_TAB.QUESTIONS]: mockQuestionList.value.length,
   [PROFILE_TAB.COLLECTIONS]: collectionCount.value,
-  [PROFILE_TAB.FOLLOWS]:
-    mockFollowQuestionList.value.length + mockFollowTopicList.value.length,
+  // 按你的需求：顶部主 Tab 的“关注”不展示右侧数量
+  [PROFILE_TAB.FOLLOWS]: null,
 }));
 
 const currentFeedList = computed(() => {
   if (activeTab.value === PROFILE_TAB.ANSWERS) return mockAnswerList.value;
   if (activeTab.value === PROFILE_TAB.QUESTIONS) return mockQuestionList.value;
-  // 收藏 Tab 使用独立面板渲染，这里返回空数组用于兜底
-  if (activeTab.value === PROFILE_TAB.COLLECTIONS) return [];
-
-  // 关注 Tab
-  if (activeFollowTab.value === PROFILE_FOLLOW_TAB.QUESTIONS) {
-    return mockFollowQuestionList.value;
-  }
-  return mockFollowTopicList.value;
+  return [];
 });
 
 const handleSelectTab = (tab) => {
@@ -143,7 +305,23 @@ const handleSelectTab = (tab) => {
   if (tab === PROFILE_TAB.FOLLOWS) {
     // 默认进入“我关注的问题”
     activeFollowTab.value = PROFILE_FOLLOW_TAB.QUESTIONS;
+    ensureFollowQuestionsLoaded();
   }
+};
+
+const handleSelectFollowTab = (tab) => {
+  activeFollowTab.value = tab;
+  if (tab === PROFILE_FOLLOW_TAB.QUESTIONS) {
+    ensureFollowQuestionsLoaded();
+    return;
+  }
+  if (tab === PROFILE_FOLLOW_TAB.TOPICS) {
+    ensureFollowTopicsLoaded();
+  }
+};
+
+const handleClickFollowQuestion = () => {
+  message.info("详情功能开发中");
 };
 
 // 资料展示/编辑数据：首屏用本地登录态兜底，页面挂载后从接口拉取并覆盖
@@ -841,7 +1019,7 @@ onMounted(() => {
                   class="subtab"
                   :class="{ active: activeFollowTab === tab.key }"
                   type="button"
-                  @click="activeFollowTab = tab.key"
+                  @click="handleSelectFollowTab(tab.key)"
                 >
                   {{ tab.label }}
                 </button>
@@ -922,6 +1100,34 @@ onMounted(() => {
                     </div>
                   </TransitionGroup>
                 </div>
+              </div>
+
+              <div v-else-if="activeTab === PROFILE_TAB.FOLLOWS">
+                <template v-if="activeFollowTab === PROFILE_FOLLOW_TAB.QUESTIONS">
+                  <FollowQuestionList
+                    :questions="followQuestionList"
+                    :loading="followQuestionLoading"
+                    :loadingMore="followQuestionLoadingMore"
+                    :hasMore="followQuestionHasMore"
+                    emptyText="暂无关注的问题"
+                    @load-more="handleLoadMoreFollowQuestions"
+                    @item-click="handleClickFollowQuestion"
+                  />
+                </template>
+
+                <template v-else>
+                  <TopicList
+                    :topics="followTopicList"
+                    :loading="followTopicLoading"
+                    :loadingMore="followTopicLoadingMore"
+                    :hasMore="followTopicHasMore"
+                    :followLoadingMap="followTopicFollowLoadingMap"
+                    unfollowBehavior="remove"
+                    emptyText="暂无关注的话题"
+                    @load-more="handleLoadMoreFollowTopics"
+                    @toggle-follow="handleToggleFollowTopic"
+                  />
+                </template>
               </div>
 
               <div v-else class="feed-list">
