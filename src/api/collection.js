@@ -56,3 +56,30 @@ export const createCollectionFolder = async (payload) => {
   return res.data.data;
 };
 
+// 修改收藏夹（PATCH /collection/{collection_id}/）
+// payload: { title?: string, description?: string, is_public?: boolean }
+export const updateCollectionFolder = async (collectionId, payload) => {
+  if (!collectionId) throw new Error("收藏夹 id 不能为空");
+
+  const res = await http.patch(`/collection/${collectionId}/`, payload);
+
+  if (Number(res?.status) !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "修改收藏夹失败");
+  }
+
+  return res.data.data;
+};
+
+// 删除收藏夹（DELETE /collection/{collection_id}/）
+export const deleteCollectionFolder = async (collectionId) => {
+  if (!collectionId) throw new Error("收藏夹 id 不能为空");
+
+  const res = await http.delete(`/collection/${collectionId}/`);
+
+  // 文档为 204 No Content（无响应体），兼容部分环境返回 200/响应体
+  if (Number(res?.status) === 204) return;
+
+  if (Number(res?.status) !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "删除收藏夹失败");
+  }
+};

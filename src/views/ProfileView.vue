@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import {
   CameraOutlined,
+  DeleteOutlined,
   EditOutlined,
   LockOutlined,
   PlusOutlined,
@@ -17,7 +18,12 @@ import {
   patchUserProfile,
 } from "../api/user";
 import { uploadToCos } from "../utils/cosUploader";
-import { createCollectionFolder, fetchAllCollections } from "../api/collection";
+import {
+  createCollectionFolder,
+  deleteCollectionFolder,
+  fetchAllCollections,
+  updateCollectionFolder,
+} from "../api/collection";
 import { formatDateTimeMinute } from "../utils/format";
 import {
   PROFILE_FOLLOW_TAB,
@@ -59,6 +65,19 @@ const createCollectionForm = ref({
   description: "",
   is_public: true,
 });
+
+const editCollectionOpen = ref(false);
+const editCollectionLoading = ref(false);
+const editCollectionId = ref(null);
+const editCollectionOriginal = ref(null);
+const editCollectionForm = ref({
+  title: "",
+  description: "",
+  is_public: true,
+});
+
+// 收藏夹删除：一次只处理一个，避免同时删除导致状态混乱
+const deletingCollectionId = ref(null);
 
 // 编辑区展开/收起动画：抽成 composable，避免动画逻辑与业务代码耦合
 const {
@@ -252,6 +271,24 @@ const openCreateCollection = () => {
   createCollectionOpen.value = true;
 };
 
+const openEditCollection = (item) => {
+  if (!item?.id) return;
+  if (deletingCollectionId.value) return;
+
+  editCollectionId.value = item.id;
+  editCollectionOriginal.value = {
+    title: String(item.title || ""),
+    description: String(item.description || ""),
+    is_public: Boolean(item.is_public),
+  };
+  editCollectionForm.value = {
+    title: String(item.title || ""),
+    description: String(item.description || ""),
+    is_public: Boolean(item.is_public),
+  };
+  editCollectionOpen.value = true;
+};
+
 const handleCreateCollection = async () => {
   if (createCollectionLoading.value) return;
 
@@ -280,8 +317,68 @@ const handleCreateCollection = async () => {
   }
 };
 
+const handleUpdateCollection = async () => {
+  if (editCollectionLoading.value) return;
+  if (!editCollectionId.value) return;
+
+  const title = String(editCollectionForm.value.title || "").trim();
+  if (!title) {
+    message.warning("请输入收藏夹标题");
+    return;
+  }
+
+  const description = String(editCollectionForm.value.description || "").trim();
+  const isPublic = Boolean(editCollectionForm.value.is_public);
+  const original = editCollectionOriginal.value || {};
+
+  const payload = {};
+  if (title !== String(original.title || "")) payload.title = title;
+  if (description !== String(original.description || "")) payload.description = description;
+  if (isPublic !== Boolean(original.is_public)) payload.is_public = isPublic;
+
+  if (Object.keys(payload).length === 0) {
+    message.info("未修改内容");
+    return;
+  }
+
+  editCollectionLoading.value = true;
+  try {
+    const updated = await updateCollectionFolder(editCollectionId.value, payload);
+    collectionList.value = (collectionList.value || []).map((item) =>
+      item?.id === updated?.id ? { ...item, ...updated } : item,
+    );
+    editCollectionOpen.value = false;
+    message.success("收藏夹已更新");
+  } catch (error) {
+    message.error(error?.message || "修改收藏夹失败");
+  } finally {
+    editCollectionLoading.value = false;
+  }
+};
+
+const handleConfirmDeleteCollection = async (item) => {
+  const id = item?.id;
+  if (!id) return;
+  if (deletingCollectionId.value) return;
+
+  deletingCollectionId.value = id;
+  try {
+    await deleteCollectionFolder(id);
+    collectionList.value = (collectionList.value || []).filter((x) => x?.id !== id);
+    if (collectionCount.value !== null) {
+      collectionCount.value = Math.max(0, Number(collectionCount.value || 0) - 1);
+    }
+    message.success("收藏夹已删除");
+  } catch (error) {
+    message.error(error?.message || "删除收藏夹失败");
+  } finally {
+    deletingCollectionId.value = null;
+  }
+};
+
 const handleClickCollection = (item) => {
   if (!item?.id) return;
+  if (deletingCollectionId.value) return;
   message.info("收藏夹详情功能开发中");
 };
 
@@ -765,34 +862,65 @@ onMounted(() => {
                   <a-button type="primary" @click="handleRetryCollections">重试</a-button>
                 </div>
 
-                <div v-else class="collection-grid">
+                <div v-else class="collection-grid-wrap">
                   <a-empty v-if="collectionList.length === 0" description="暂无收藏夹" />
 
-                  <div
-                    v-for="item in collectionList"
-                    v-else
-                    :key="item.id"
-                    class="collection-card"
-                    role="button"
-                    tabindex="0"
-                    @click="handleClickCollection(item)"
-                  >
-                    <div class="collection-top">
-                      <div class="collection-title">{{ item.title }}</div>
-                      <LockOutlined v-if="item.is_public === false" class="collection-lock" />
-                    </div>
+                  <TransitionGroup v-else tag="div" name="collection-fade" class="collection-grid">
+                    <div
+                      v-for="item in collectionList"
+                      :key="item.id"
+                      class="collection-card"
+                      role="button"
+                      tabindex="0"
+                      @click="handleClickCollection(item)"
+                    >
+                      <div class="collection-top">
+                        <div class="collection-title">{{ item.title }}</div>
+                        <div class="collection-actions">
+                          <div class="collection-ops">
+                            <button
+                              class="collection-action action-edit"
+                              type="button"
+                              :disabled="deletingCollectionId === item.id"
+                              @click.stop="openEditCollection(item)"
+                            >
+                              <EditOutlined />
+                            </button>
 
-                    <div class="collection-desc">
-                      {{ item.description || "暂无简介" }}
-                    </div>
+                            <a-popconfirm
+                              title="确认删除该收藏夹？"
+                              ok-text="删除"
+                              cancel-text="取消"
+                              :disabled="deletingCollectionId === item.id"
+                              @confirm="handleConfirmDeleteCollection(item)"
+                            >
+                              <button
+                                class="collection-action action-delete"
+                                type="button"
+                                :disabled="deletingCollectionId === item.id"
+                                @click.stop
+                              >
+                                <DeleteOutlined />
+                              </button>
+                            </a-popconfirm>
+                          </div>
 
-                    <div class="collection-bottom">
-                      <div class="collection-count">{{ item.answer_count || 0 }} 条内容</div>
-                      <div class="collection-updated">
-                        {{ formatCollectionUpdated(item) }}
+                          <LockOutlined v-if="item.is_public === false" class="collection-lock" />
+                        </div>
+                      </div>
+
+                      <div class="collection-desc">
+                        {{ item.description || "暂无简介" }}
+                      </div>
+
+                      <div class="collection-bottom">
+                        <div class="collection-count">{{ item.answer_count || 0 }} 条内容</div>
+                        <div class="collection-updated">
+                          {{ formatCollectionUpdated(item) }}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  </TransitionGroup>
                 </div>
               </div>
 
@@ -978,6 +1106,43 @@ onMounted(() => {
           <a-switch v-model:checked="createCollectionForm.is_public" />
           <span class="public-hint">
             {{ createCollectionForm.is_public ? "公开" : "私密" }}
+          </span>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <a-modal
+      v-model:open="editCollectionOpen"
+      title="编辑收藏夹"
+      :confirm-loading="editCollectionLoading"
+      ok-text="保存"
+      cancel-text="取消"
+      @ok="handleUpdateCollection"
+    >
+      <a-form layout="vertical">
+        <a-form-item label="收藏夹标题" required>
+          <a-input
+            v-model:value="editCollectionForm.title"
+            placeholder="请输入收藏夹标题"
+            :maxlength="40"
+            show-count
+          />
+        </a-form-item>
+
+        <a-form-item label="收藏夹简介">
+          <a-textarea
+            v-model:value="editCollectionForm.description"
+            placeholder="简单介绍一下这个收藏夹（可选）"
+            :rows="3"
+            :maxlength="120"
+            show-count
+          />
+        </a-form-item>
+
+        <a-form-item label="是否公开">
+          <a-switch v-model:checked="editCollectionForm.is_public" />
+          <span class="public-hint">
+            {{ editCollectionForm.is_public ? "公开" : "私密" }}
           </span>
         </a-form-item>
       </a-form>
@@ -1456,6 +1621,57 @@ onMounted(() => {
   gap: 12px;
 }
 
+.collection-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.collection-ops {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  transition: max-width 0.16s ease, opacity 0.16s ease;
+}
+
+.collection-card:hover .collection-ops,
+.collection-card:focus-within .collection-ops {
+  max-width: 80px;
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.collection-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  color: #94a3b8;
+  font-size: 16px;
+  line-height: 1;
+  transition: color 0.16s ease;
+}
+
+.collection-action.action-edit:hover {
+  color: var(--brand-color);
+}
+
+.collection-action.action-delete:hover {
+  color: #ef4444;
+}
+
+.collection-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .collection-title {
   font-size: 18px;
   font-weight: 900;
@@ -1504,6 +1720,16 @@ onMounted(() => {
   font-weight: 700;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.collection-fade-enter-active,
+.collection-fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+
+.collection-fade-enter-from,
+.collection-fade-leave-to {
+  opacity: 0;
 }
 
 .feed-list {
