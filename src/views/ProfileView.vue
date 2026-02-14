@@ -14,6 +14,7 @@ import TopicList from "../components/TopicList.vue";
 import FollowQuestionList from "../components/FollowQuestionList.vue";
 import UserAnswerList from "../components/UserAnswerList.vue";
 import UserQuestionList from "../components/UserQuestionList.vue";
+import ProfileFollowUsersPanel from "../components/ProfileFollowUsersPanel.vue";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
 import { useExpandTransition } from "../composables/useExpandTransition";
@@ -424,6 +425,7 @@ const handleSelectFollowTab = (tab) => {
   }
   if (tab === PROFILE_FOLLOW_TAB.TOPICS) {
     ensureFollowTopicsLoaded();
+    return;
   }
 };
 
@@ -1256,7 +1258,7 @@ onMounted(() => {
                   />
                 </template>
 
-                <template v-else>
+                <template v-else-if="activeFollowTab === PROFILE_FOLLOW_TAB.TOPICS">
                   <TopicList
                     :topics="followTopicList"
                     :loading="followTopicLoading"
@@ -1268,6 +1270,10 @@ onMounted(() => {
                     @load-more="handleLoadMoreFollowTopics"
                     @toggle-follow="handleToggleFollowTopic"
                   />
+                </template>
+
+                <template v-else>
+                  <ProfileFollowUsersPanel :activeKey="activeFollowTab" />
                 </template>
               </div>
 

@@ -28,3 +28,54 @@ export const fetchUserAchievements = async () => {
   }
   return res.data.data;
 };
+
+// 获取用户关注的人（GET /user/following/users/）
+// params: { page?: number, size?: number }
+export const fetchFollowingUsers = async (params = {}) => {
+  const res = await http.get("/user/following/users/", {
+    params: {
+      page: params.page || 1,
+      size: params.size || 20,
+    },
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取我关注的人失败");
+  }
+
+  return res.data.data;
+};
+
+// 获取关注我的人（GET /user/followers/users/）
+// params: { page?: number, size?: number }
+export const fetchFollowerUsers = async (params = {}) => {
+  const res = await http.get("/user/followers/users/", {
+    params: {
+      page: params.page || 1,
+      size: params.size || 20,
+    },
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取关注我的人失败");
+  }
+
+  return res.data.data;
+};
+
+// 关注/取消关注用户（POST /user/{user_id}/follow/）
+// action: 1-关注、2-取消关注
+export const toggleUserFollow = async (userId, action) => {
+  if (!userId) throw new Error("缺少用户ID");
+  if (![1, 2].includes(Number(action))) throw new Error("无效的关注操作");
+
+  const res = await http.post(`/user/${userId}/follow/`, {
+    action: Number(action),
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "操作失败");
+  }
+
+  return res.data.data;
+};
