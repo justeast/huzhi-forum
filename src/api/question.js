@@ -35,3 +35,20 @@ export const fetchFollowingQuestionList = async (params = {}) => {
 
   return res.data.data;
 };
+
+// 获取用户的提问（GET /user/questions/）
+// params: { page?: number, size?: number }
+export const fetchUserQuestionList = async (params = {}) => {
+  const res = await http.get("/user/questions/", {
+    params: {
+      page: params.page || 1,
+      size: params.size || 10,
+    },
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取提问列表失败");
+  }
+
+  return res.data.data;
+};

@@ -1,0 +1,245 @@
+<script setup>
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { message } from "ant-design-vue";
+import { CommentOutlined, LikeFilled } from "@ant-design/icons-vue";
+import { VOTE_STATUS } from "../constants/vote";
+import { formatDateTimeMinute, toPreviewText } from "../utils/format";
+
+const props = defineProps({
+  answers: { type: Array, default: () => [] },
+  loading: { type: Boolean, default: false },
+  loadingMore: { type: Boolean, default: false },
+  hasMore: { type: Boolean, default: false },
+  emptyText: { type: String, default: "暂无回答" },
+});
+
+const emit = defineEmits(["load-more", "item-click"]);
+
+const sentinelRef = ref(null);
+let observer = null;
+
+const showEmpty = computed(() => !props.loading && props.answers.length === 0);
+
+const canLoadMore = computed(
+  () => props.hasMore && !props.loading && !props.loadingMore,
+);
+
+const observeSentinel = () => {
+  if (!sentinelRef.value) return;
+  if (observer) observer.disconnect();
+
+  observer = new IntersectionObserver(
+    (entries) => {
+      const entry = entries?.[0];
+      if (!entry?.isIntersecting) return;
+      if (!canLoadMore.value) return;
+      emit("load-more");
+    },
+    {
+      root: null,
+      rootMargin: "240px 0px 240px 0px",
+      threshold: 0,
+    },
+  );
+
+  observer.observe(sentinelRef.value);
+};
+
+onMounted(() => {
+  observeSentinel();
+});
+
+onBeforeUnmount(() => {
+  if (observer) observer.disconnect();
+  observer = null;
+});
+
+const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
+
+const handleClickItem = (item) => {
+  emit("item-click", item);
+};
+</script>
+
+<template>
+  <div class="user-answer-list">
+    <a-spin :spinning="loading">
+      <a-empty v-if="showEmpty" :description="emptyText" />
+
+      <div v-else class="list">
+        <div
+          v-for="item in answers"
+          :key="item.id"
+          class="row"
+          role="button"
+          tabindex="0"
+          @click="handleClickItem(item)"
+        >
+          <div class="title">{{ item?.question?.title }}</div>
+
+          <div class="preview">
+            {{ toPreviewText(item?.content, 260) }}
+          </div>
+
+          <div class="bottom">
+            <div class="actions">
+              <button
+                class="vote-btn"
+                :class="{ voted: isUpvoted(item?.user_vote_status) }"
+                type="button"
+                @click.stop="message.info('赞同功能开发中')"
+              >
+                <LikeFilled />
+                <span class="action-text">{{ Number(item?.upvote_count || 0) }} 赞同</span>
+              </button>
+
+              <div class="action-meta">
+                <CommentOutlined />
+                <span class="action-text">
+                  {{ Number(item?.comment_count || 0) }} 评论
+                </span>
+              </div>
+            </div>
+
+            <div class="time">
+              {{ formatDateTimeMinute(item?.created) }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div ref="sentinelRef" class="sentinel" aria-hidden="true"></div>
+
+      <div v-if="loadingMore" class="more">
+        <a-spin size="small" />
+        <span class="more-text">加载中...</span>
+      </div>
+
+      <div v-else-if="answers.length > 0 && !hasMore" class="more done">
+        <span class="more-text">没有更多了</span>
+      </div>
+    </a-spin>
+  </div>
+</template>
+
+<style scoped>
+.user-answer-list {
+  padding: 0;
+}
+
+.list {
+  padding: 0;
+}
+
+.row {
+  padding: 18px 18px 14px;
+  cursor: pointer;
+  transition: background 0.18s ease;
+}
+
+.row + .row {
+  border-top: 1px solid #f0f2f5;
+}
+
+.row:hover {
+  background: rgba(120, 200, 65, 0.06);
+}
+
+.title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 800;
+  color: #111827;
+  transition: color 0.18s ease;
+}
+
+.row:hover .title {
+  color: var(--brand-color);
+}
+
+.preview {
+  margin: 0;
+  color: #334155;
+  line-height: 1.75;
+  font-size: 14px;
+  display: -webkit-box;
+  line-clamp: 3;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.bottom {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.vote-btn {
+  border: none;
+  background: rgba(120, 200, 65, 0.12);
+  color: var(--brand-color);
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vote-btn:hover {
+  background: rgba(120, 200, 65, 0.18);
+}
+
+.vote-btn.voted {
+  background: var(--brand-color);
+  color: #fff;
+}
+
+.vote-btn.voted:hover {
+  background: var(--brand-color-dark);
+}
+
+.action-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.time {
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 700;
+  flex: none;
+  white-space: nowrap;
+}
+
+.sentinel {
+  height: 1px;
+}
+
+.more {
+  margin: 14px 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.more.done {
+  padding-bottom: 8px;
+}
+</style>
+

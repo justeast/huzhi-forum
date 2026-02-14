@@ -12,6 +12,8 @@ import {
 import AppHeader from "../components/AppHeader.vue";
 import TopicList from "../components/TopicList.vue";
 import FollowQuestionList from "../components/FollowQuestionList.vue";
+import UserAnswerList from "../components/UserAnswerList.vue";
+import UserQuestionList from "../components/UserQuestionList.vue";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
 import { useExpandTransition } from "../composables/useExpandTransition";
@@ -20,7 +22,8 @@ import {
   fetchUserProfile,
   patchUserProfile,
 } from "../api/user";
-import { fetchFollowingQuestionList } from "../api/question";
+import { fetchUserAnswerList } from "../api/answer";
+import { fetchFollowingQuestionList, fetchUserQuestionList } from "../api/question";
 import { fetchFollowingTopics, toggleTopicFollow } from "../api/topic";
 import { uploadToCos } from "../utils/cosUploader";
 import {
@@ -101,17 +104,23 @@ const pageMode = ref("feed"); // feed | edit-profile
 const activeTab = ref(PROFILE_TAB.ANSWERS);
 const activeFollowTab = ref(PROFILE_FOLLOW_TAB.QUESTIONS);
 
-// 临时占位数据（回答/提问列表，后续对接接口再替换）
-const mockAnswerList = ref([
-  { id: "a1", title: "前端开发中，React 相比 Vue 有哪些核心优势？", rightText: "42 个回答" },
-  { id: "a2", title: "如何看待 2024 年的人工智能发展趋势？", rightText: "156 个回答" },
-  { id: "a3", title: "大学生如何高效地准备毕业设计？", rightText: "8 个回答" },
-]);
+// 回答列表：展示“我回答过的问题”与回答摘要
+const ANSWER_PAGE_SIZE = 10;
+const answerCount = ref(null);
+const answerList = ref([]);
+const answerPage = ref(1);
+const answerHasMore = ref(true);
+const answerLoading = ref(false);
+const answerLoadingMore = ref(false);
 
-const mockQuestionList = ref([
-  { id: "q1", title: "易上手的编程语言有哪些？", rightText: "3 个回答" },
-  { id: "q2", title: "如何系统学习计算机网络？", rightText: "12 个回答" },
-]);
+// 提问列表：展示“我提出的问题”
+const QUESTION_PAGE_SIZE = 10;
+const userQuestionCount = ref(null);
+const userQuestionList = ref([]);
+const userQuestionPage = ref(1);
+const userQuestionHasMore = ref(true);
+const userQuestionLoading = ref(false);
+const userQuestionLoadingMore = ref(false);
 
 // 关注-问题：仅展示标题 + 回答数，支持无限滚动加载更多
 const FOLLOW_QUESTION_PAGE_SIZE = 10;
@@ -141,6 +150,92 @@ const mergeById = (items, incoming) => {
     }
   });
   return Array.from(map.values());
+};
+
+const fetchUserAnswers = async ({ reset } = { reset: false }) => {
+  if (answerLoading.value || answerLoadingMore.value) return;
+  if (!reset && !answerHasMore.value) return;
+
+  if (reset) {
+    answerPage.value = 1;
+    answerHasMore.value = true;
+    answerList.value = [];
+    answerLoading.value = true;
+  } else {
+    answerLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : answerPage.value + 1;
+
+  try {
+    const data = await fetchUserAnswerList({ page, size: ANSWER_PAGE_SIZE });
+    if (answerCount.value === null) {
+      answerCount.value = Math.max(0, Number(data?.count || 0));
+    }
+    const results = data?.results || [];
+    answerList.value = mergeById(answerList.value, results);
+    answerPage.value = page;
+    answerHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取回答列表失败");
+  } finally {
+    answerLoading.value = false;
+    answerLoadingMore.value = false;
+  }
+};
+
+const ensureAnswersLoaded = () => {
+  if (answerLoading.value) return;
+  if (answerList.value.length > 0) return;
+  fetchUserAnswers({ reset: true });
+};
+
+const handleLoadMoreAnswers = () => {
+  fetchUserAnswers({ reset: false });
+};
+
+const fetchUserQuestions = async ({ reset } = { reset: false }) => {
+  if (userQuestionLoading.value || userQuestionLoadingMore.value) return;
+  if (!reset && !userQuestionHasMore.value) return;
+
+  if (reset) {
+    userQuestionPage.value = 1;
+    userQuestionHasMore.value = true;
+    userQuestionList.value = [];
+    userQuestionLoading.value = true;
+  } else {
+    userQuestionLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : userQuestionPage.value + 1;
+
+  try {
+    const data = await fetchUserQuestionList({ page, size: QUESTION_PAGE_SIZE });
+    if (userQuestionCount.value === null) {
+      userQuestionCount.value = Math.max(0, Number(data?.count || 0));
+    }
+    const results = data?.results || [];
+    userQuestionList.value = mergeById(userQuestionList.value, results);
+    userQuestionPage.value = page;
+    userQuestionHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取提问列表失败");
+  } finally {
+    userQuestionLoading.value = false;
+    userQuestionLoadingMore.value = false;
+  }
+};
+
+const ensureUserQuestionsLoaded = () => {
+  if (userQuestionLoading.value) return;
+  if (userQuestionList.value.length > 0) return;
+  fetchUserQuestions({ reset: true });
+};
+
+const handleLoadMoreUserQuestions = () => {
+  fetchUserQuestions({ reset: false });
 };
 
 const fetchFollowQuestions = async ({ reset } = { reset: false }) => {
@@ -287,21 +382,33 @@ const handleToggleFollowTopic = async (topic) => {
 };
 
 const tabCount = computed(() => ({
-  [PROFILE_TAB.ANSWERS]: mockAnswerList.value.length,
-  [PROFILE_TAB.QUESTIONS]: mockQuestionList.value.length,
+  [PROFILE_TAB.ANSWERS]: answerCount.value,
+  [PROFILE_TAB.QUESTIONS]: userQuestionCount.value,
   [PROFILE_TAB.COLLECTIONS]: collectionCount.value,
   // 按你的需求：顶部主 Tab 的“关注”不展示右侧数量
   [PROFILE_TAB.FOLLOWS]: null,
 }));
 
-const currentFeedList = computed(() => {
-  if (activeTab.value === PROFILE_TAB.ANSWERS) return mockAnswerList.value;
-  if (activeTab.value === PROFILE_TAB.QUESTIONS) return mockQuestionList.value;
-  return [];
-});
+const tabCountLoading = computed(() => ({
+  [PROFILE_TAB.ANSWERS]: answerLoading.value && answerCount.value === null,
+  [PROFILE_TAB.QUESTIONS]: userQuestionLoading.value && userQuestionCount.value === null,
+  [PROFILE_TAB.COLLECTIONS]: collectionLoading.value && collectionCount.value === null,
+  [PROFILE_TAB.FOLLOWS]: false,
+}));
 
 const handleSelectTab = (tab) => {
   activeTab.value = tab;
+
+  if (tab === PROFILE_TAB.ANSWERS) {
+    ensureAnswersLoaded();
+    return;
+  }
+
+  if (tab === PROFILE_TAB.QUESTIONS) {
+    ensureUserQuestionsLoaded();
+    return;
+  }
+
   if (tab === PROFILE_TAB.FOLLOWS) {
     // 默认进入“我关注的问题”
     activeFollowTab.value = PROFILE_FOLLOW_TAB.QUESTIONS;
@@ -321,6 +428,14 @@ const handleSelectFollowTab = (tab) => {
 };
 
 const handleClickFollowQuestion = () => {
+  message.info("详情功能开发中");
+};
+
+const handleClickAnswerItem = () => {
+  message.info("详情功能开发中");
+};
+
+const handleClickUserQuestionItem = () => {
   message.info("详情功能开发中");
 };
 
@@ -890,6 +1005,8 @@ onMounted(() => {
   loadUserProfile();
   loadUserAchievements();
   loadCollections();
+  ensureAnswersLoaded();
+  ensureUserQuestionsLoaded();
 });
 </script>
 
@@ -991,7 +1108,7 @@ onMounted(() => {
                   >
                     {{ tab.label }}
                     <span
-                      v-if="tab.key === PROFILE_TAB.COLLECTIONS && collectionLoading"
+                      v-if="tabCountLoading[tab.key]"
                       class="count-skeleton"
                       aria-hidden="true"
                     ></span>
@@ -1025,7 +1142,31 @@ onMounted(() => {
                 </button>
               </div>
 
-              <div v-if="activeTab === PROFILE_TAB.COLLECTIONS" class="collection-panel">
+              <div v-if="activeTab === PROFILE_TAB.ANSWERS">
+                <UserAnswerList
+                  :answers="answerList"
+                  :loading="answerLoading"
+                  :loadingMore="answerLoadingMore"
+                  :hasMore="answerHasMore"
+                  emptyText="暂无回答"
+                  @load-more="handleLoadMoreAnswers"
+                  @item-click="handleClickAnswerItem"
+                />
+              </div>
+
+              <div v-else-if="activeTab === PROFILE_TAB.QUESTIONS">
+                <UserQuestionList
+                  :questions="userQuestionList"
+                  :loading="userQuestionLoading"
+                  :loadingMore="userQuestionLoadingMore"
+                  :hasMore="userQuestionHasMore"
+                  emptyText="暂无提问"
+                  @load-more="handleLoadMoreUserQuestions"
+                  @item-click="handleClickUserQuestionItem"
+                />
+              </div>
+
+              <div v-else-if="activeTab === PROFILE_TAB.COLLECTIONS" class="collection-panel">
                 <div v-if="collectionLoading" class="collection-grid" aria-hidden="true">
                   <div v-for="n in 4" :key="n" class="collection-card skeleton-card">
                     <div class="skeleton-line w-70"></div>
@@ -1130,19 +1271,8 @@ onMounted(() => {
                 </template>
               </div>
 
-              <div v-else class="feed-list">
-                <a-empty v-if="currentFeedList.length === 0" description="暂无内容" />
-                <div
-                  v-for="item in currentFeedList"
-                  :key="item.id"
-                  class="feed-row"
-                  role="button"
-                  tabindex="0"
-                  @click="message.info('详情功能开发中')"
-                >
-                  <div class="row-title">{{ item.title }}</div>
-                  <div class="row-right">{{ item.rightText }}</div>
-                </div>
+              <div v-else class="placeholder">
+                <a-empty description="开发中" />
               </div>
             </div>
           </main>
@@ -1938,43 +2068,8 @@ onMounted(() => {
   opacity: 0;
 }
 
-.feed-list {
-  padding: 0;
-}
-
-.feed-row {
-  padding: 16px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  cursor: pointer;
-  transition: background 0.18s ease;
-}
-
-.feed-row+.feed-row {
-  border-top: 1px solid #f0f2f5;
-}
-
-.feed-row:hover {
-  background: rgba(120, 200, 65, 0.06);
-}
-
-.row-title {
-  font-size: 16px;
-  font-weight: 800;
-  color: #111827;
-  line-height: 1.4;
-}
-
-.feed-row:hover .row-title {
-  color: var(--brand-color);
-}
-
-.row-right {
-  color: #94a3b8;
-  font-size: 13px;
-  flex: none;
+.placeholder {
+  padding: 22px 18px 28px;
 }
 
 .aside {
