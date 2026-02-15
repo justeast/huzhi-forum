@@ -60,6 +60,7 @@ const achievementError = ref("");
 const achievements = ref({
   agree_count: 0,
   answer_count: 0,
+  follower_count: 0,
 });
 
 const collectionLoading = ref(false);
@@ -499,6 +500,7 @@ const applyAchievements = (data) => {
   achievements.value = {
     agree_count: Math.max(0, Number(data?.agree_count || 0)),
     answer_count: Math.max(0, Number(data?.answer_count || 0)),
+    follower_count: Math.max(0, Number(data?.follower_count || 0)),
   };
 };
 
@@ -513,7 +515,7 @@ const loadUserAchievements = async () => {
   } catch (error) {
     const msg = error?.message || "个人成就加载失败";
     achievementError.value = msg;
-    applyAchievements({ agree_count: 0, answer_count: 0 });
+    applyAchievements({ agree_count: 0, answer_count: 0, follower_count: 0 });
   } finally {
     achievementLoading.value = false;
   }
@@ -1290,6 +1292,7 @@ onMounted(() => {
                 <div v-if="achievementLoading" class="skeleton-lines" aria-hidden="true">
                   <div class="skeleton-line w-70"></div>
                   <div class="skeleton-line w-52"></div>
+                  <div class="skeleton-line w-40"></div>
                 </div>
                 <template v-else>
                   <div class="ach-item">
@@ -1301,6 +1304,11 @@ onMounted(() => {
                     <span class="ach-label">作出</span>
                     <span class="ach-value">{{ achievements.answer_count }}</span>
                     <span class="ach-suffix">次回答</span>
+                  </div>
+                  <div class="ach-item">
+                    <span class="ach-label">得到</span>
+                    <span class="ach-value">{{ achievements.follower_count }}</span>
+                    <span class="ach-suffix">人关注</span>
                   </div>
                   <div v-if="achievementError" class="ach-error">
                     {{ achievementError }}，已显示为 0
