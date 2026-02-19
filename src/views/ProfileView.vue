@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
+import { useRouter } from "vue-router";
 import {
   CameraOutlined,
   DeleteOutlined,
@@ -41,6 +42,7 @@ import {
   PROFILE_TAB_LIST,
 } from "../constants/profileNav";
 
+const router = useRouter();
 const authStore = useAuthStore();
 const topicFollowStore = useTopicFollowStore();
 
@@ -430,16 +432,22 @@ const handleSelectFollowTab = (tab) => {
   }
 };
 
-const handleClickFollowQuestion = () => {
-  message.info("详情功能开发中");
+const handleClickFollowQuestion = (item) => {
+  const id = item?.id;
+  if (!id) return;
+  router.push(`/question/${id}`);
 };
 
-const handleClickAnswerItem = () => {
-  message.info("详情功能开发中");
+const handleClickAnswerItem = (item) => {
+  const questionId = item?.question?.id;
+  if (!questionId) return;
+  router.push(`/question/${questionId}`);
 };
 
-const handleClickUserQuestionItem = () => {
-  message.info("详情功能开发中");
+const handleClickUserQuestionItem = (item) => {
+  const id = item?.id;
+  if (!id) return;
+  router.push(`/question/${id}`);
 };
 
 // 资料展示/编辑数据：首屏用本地登录态兜底，页面挂载后从接口拉取并覆盖

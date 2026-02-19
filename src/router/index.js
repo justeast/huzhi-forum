@@ -21,6 +21,12 @@ const routes = [
     component: () => import("../views/ProfileView.vue"),
     meta: { requiresAuth: true },
   },
+  {
+    path: "/question/:id",
+    name: "question-detail",
+    component: () => import("../views/QuestionDetailView.vue"),
+    meta: { requiresAuth: true },
+  },
 ];
 
 const router = createRouter({

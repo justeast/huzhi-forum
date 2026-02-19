@@ -79,3 +79,16 @@ export const toggleUserFollow = async (userId, action) => {
 
   return res.data.data;
 };
+
+// 获取用户卡片信息（GET /user/{user_id}/card/）
+export const fetchUserCard = async (userId) => {
+  if (!userId) throw new Error("缺少用户ID");
+
+  const res = await http.get(`/user/${userId}/card/`);
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取用户卡片信息失败");
+  }
+
+  return res.data.data;
+};

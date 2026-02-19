@@ -52,3 +52,16 @@ export const fetchUserQuestionList = async (params = {}) => {
 
   return res.data.data;
 };
+
+// 获取问题详情（GET /question/{question_id}/）
+export const fetchQuestionDetail = async (questionId) => {
+  if (!questionId) throw new Error("问题ID不能为空");
+
+  const res = await http.get(`/question/${questionId}/`);
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取问题详情失败");
+  }
+
+  return res.data.data;
+};

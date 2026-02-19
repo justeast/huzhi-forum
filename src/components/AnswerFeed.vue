@@ -1,27 +1,29 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
-import { useRouter } from "vue-router";
-import { CommentOutlined, LikeFilled, StarOutlined } from "@ant-design/icons-vue";
+import {
+  CommentOutlined,
+  DislikeOutlined,
+  LikeFilled,
+  StarOutlined,
+} from "@ant-design/icons-vue";
 import { VOTE_STATUS } from "../constants/vote";
-import { formatCount, toPreviewText } from "../utils/format";
-
-const router = useRouter();
+import { formatCount, formatDateTimeMinute } from "../utils/format";
 
 const props = defineProps({
-  questions: { type: Array, default: () => [] },
+  answers: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
   loadingMore: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
-  emptyText: { type: String, default: "暂无内容" },
+  emptyText: { type: String, default: "暂无回答" },
 });
 
-const emit = defineEmits(["load-more", "collect"]);
+const emit = defineEmits(["load-more"]);
 
 const sentinelRef = ref(null);
 let observer = null;
 
-const showEmpty = computed(() => !props.loading && props.questions.length === 0);
+const showEmpty = computed(() => !props.loading && props.answers.length === 0);
 
 const canLoadMore = computed(
   () => props.hasMore && !props.loading && !props.loadingMore,
@@ -59,73 +61,76 @@ onBeforeUnmount(() => {
 
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
 
-const handleCollect = () => {
-  emit("collect");
-  message.info("收藏功能开发中");
+const handleUpvote = () => {
+  message.info("赞同功能开发中");
 };
 
-const handleClickItem = (item) => {
-  const id = item?.id;
-  if (!id) return;
-  router.push(`/question/${id}`);
+const handleDownvote = () => {
+  message.info("暂踩功能开发中");
+};
+
+const handleComment = () => {
+  message.info("评论功能开发中");
+};
+
+const handleCollect = () => {
+  message.info("收藏功能开发中");
 };
 </script>
 
 <template>
-  <div class="question-list">
+  <div class="answer-feed">
     <a-spin :spinning="loading">
-      <div class="feed">
-        <a-empty v-if="showEmpty" :description="emptyText" />
+      <a-empty v-if="showEmpty" :description="emptyText" />
 
-        <div
-          v-for="item in questions"
-          :key="item.id"
-          class="feed-item"
-          role="button"
-          tabindex="0"
-          @click="handleClickItem(item)"
-          @keydown.enter.prevent="handleClickItem(item)"
-          @keydown.space.prevent="handleClickItem(item)"
-        >
-          <h2 class="title">{{ item.title }}</h2>
+      <div v-else class="list">
+        <div v-for="item in answers" :key="item.id" class="row">
+          <div class="head">
+            <a-avatar :size="36" :src="item?.respondent?.avatar" />
+            <div class="meta">
+              <div class="name">
+                {{ item?.respondent?.username || "匿名用户" }}
+              </div>
+            </div>
 
-          <p class="answer-preview">
-            <template v-if="item.top_answer">
-              <span class="answerer">
-                {{ item.top_answer.respondent?.username || "匿名用户" }}：
-              </span>
-              {{ toPreviewText(item.top_answer.content, 260) }}
-            </template>
-            <template v-else>
-              {{ toPreviewText(item.content, 260) }}
-            </template>
-          </p>
+            <div class="time">
+              {{ formatDateTimeMinute(item?.created) }}
+            </div>
+          </div>
+
+          <div class="content">
+            {{ item?.content }}
+          </div>
 
           <div class="actions">
             <button
               class="vote-btn"
-              :class="{ voted: isUpvoted(item.top_answer?.user_vote_status) }"
+              :class="{ voted: isUpvoted(item?.user_vote_status) }"
               type="button"
-              @click.stop="message.info('赞同功能开发中')"
+              @click="handleUpvote"
             >
               <LikeFilled />
               <span class="action-text">
-                {{ formatCount(item.top_answer?.upvote_count || 0) }} 赞同
+                {{ formatCount(item?.upvote_count || 0) }} 赞同
               </span>
             </button>
 
-            <div class="action-meta">
+            <button
+              class="action-meta link icon-only"
+              type="button"
+              @click="handleDownvote"
+            >
+              <DislikeOutlined />
+            </button>
+
+            <button class="action-meta link" type="button" @click="handleComment">
               <CommentOutlined />
               <span class="action-text">
-                {{ item.top_answer?.comment_count || 0 }} 条评论
+                {{ Number(item?.comment_count || 0) }} 评论
               </span>
-            </div>
+            </button>
 
-            <button
-              class="action-meta link"
-              type="button"
-              @click.stop="handleCollect"
-            >
+            <button class="action-meta link" type="button" @click="handleCollect">
               <StarOutlined />
               <span class="action-text">收藏</span>
             </button>
@@ -140,7 +145,7 @@ const handleClickItem = (item) => {
         <span class="more-text">加载中...</span>
       </div>
 
-      <div v-else-if="questions.length > 0 && !hasMore" class="more done">
+      <div v-else-if="answers.length > 0 && !hasMore" class="more done">
         <span class="more-text">没有更多了</span>
       </div>
     </a-spin>
@@ -148,55 +153,65 @@ const handleClickItem = (item) => {
 </template>
 
 <style scoped>
-.question-list {
+.answer-feed {
   padding: 0;
 }
 
-.feed {
+.list {
   padding: 0;
 }
 
-.feed-item {
+.row {
   padding: 18px 18px 14px;
   transition: background 0.18s ease;
-  cursor: pointer;
 }
 
-.feed-item:hover {
-  background: rgba(120, 200, 65, 0.06);
-}
-
-.feed-item + .feed-item {
+.row + .row {
   border-top: 1px solid #f0f2f5;
 }
 
-.title {
-  margin: 0 0 10px;
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--text);
+.row:hover {
+  background: rgba(120, 200, 65, 0.06);
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.name {
+  font-weight: 900;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.2;
   transition: color 0.18s ease;
 }
 
-.feed-item:hover .title {
+.row:hover .name {
   color: var(--brand-color);
 }
 
-.answer-preview {
-  margin: 0;
-  color: #334155;
-  line-height: 1.75;
-  font-size: 14px;
-  display: -webkit-box;
-  line-clamp: 3;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.time {
+  color: #94a3b8;
+  font-size: 13px;
+  font-weight: 700;
+  flex: none;
+  white-space: nowrap;
 }
 
-.answerer {
-  font-weight: 800;
-  color: #111827;
+.content {
+  margin-top: 12px;
+  color: #334155;
+  line-height: 1.85;
+  font-size: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .actions {
@@ -206,6 +221,7 @@ const handleClickItem = (item) => {
   gap: 18px;
   color: #94a3b8;
   font-size: 13px;
+  flex-wrap: wrap;
 }
 
 .vote-btn {
@@ -245,6 +261,16 @@ const handleClickItem = (item) => {
   background: transparent;
   padding: 0;
   cursor: pointer;
+  color: inherit;
+}
+
+.action-meta.link.icon-only {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .action-meta.link:hover {
