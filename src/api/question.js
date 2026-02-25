@@ -65,3 +65,39 @@ export const fetchQuestionDetail = async (questionId) => {
 
   return res.data.data;
 };
+
+// 关注/取消关注问题（POST /question/{question_id}/follow/）
+// action: 1-关注、2-取消关注
+export const toggleQuestionFollow = async (questionId, action) => {
+  if (!questionId) throw new Error("缺少问题ID");
+  const act = Number(action);
+  if (![1, 2].includes(act)) throw new Error("无效的关注操作");
+
+  const res = await http.post(`/question/${questionId}/follow/`, {
+    action: act,
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "操作失败");
+  }
+
+  return res.data.data;
+};
+
+// 对问题投票（POST /question/{question_id}/vote/）
+// voteType: 1=赞同, -1=反对, 0=取消投票
+export const voteQuestion = async (questionId, voteType) => {
+  if (!questionId) throw new Error("缺少问题ID");
+  const vt = Number(voteType);
+  if (![1, 0, -1].includes(vt)) throw new Error("无效的投票类型");
+
+  const res = await http.post(`/question/${questionId}/vote/`, {
+    vote_type: vt,
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "投票失败");
+  }
+
+  return res.data.data;
+};

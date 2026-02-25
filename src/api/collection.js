@@ -43,6 +43,58 @@ export const fetchAllCollections = async ({ size = 20 } = {}) => {
   return { count, results: list };
 };
 
+// 获取“包含指定回答”的收藏夹列表（GET /collection/?answer={answer_id}）
+// 自动翻页拉全量，返回结构同 fetchAllCollections
+export const fetchAllCollectionsContainingAnswer = async (
+  answerId,
+  { size = 20 } = {},
+) => {
+  if (!answerId) throw new Error("缺少回答ID");
+
+  const list = [];
+  let count = 0;
+  let nextUrl = null;
+  let page = 1;
+
+  while (true) {
+    const data = await fetchCollectionPage(
+      nextUrl || {
+        page,
+        size,
+        answer: answerId,
+      },
+    );
+
+    if (!count) count = Number(data?.count || 0);
+    const results = data?.results || [];
+    list.push(...results);
+
+    nextUrl = data?.next || null;
+    if (!nextUrl) break;
+
+    page += 1;
+  }
+
+  return { count, results: list };
+};
+
+// 收藏/取消收藏回答（POST /collection/{collection_id}/collect_answer/）
+// toggle 操作：同一收藏夹再次调用会取消收藏
+export const toggleCollectAnswer = async (collectionId, answerId) => {
+  if (!collectionId) throw new Error("收藏夹 id 不能为空");
+  if (!answerId) throw new Error("缺少回答ID");
+
+  const res = await http.post(`/collection/${collectionId}/collect_answer/`, {
+    answer_id: answerId,
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "操作失败");
+  }
+
+  return res.data.data;
+};
+
 // 创建收藏夹（POST /collection/）
 // payload: { title: string, description?: string, is_public?: boolean }
 export const createCollectionFolder = async (payload) => {

@@ -36,3 +36,21 @@ export const fetchAnswerList = async (params = {}) => {
 
   return res.data.data;
 };
+
+// 对回答投票（POST /answer/{answer_id}/vote/）
+// voteType: 1=赞同, -1=反对, 0=取消投票
+export const voteAnswer = async (answerId, voteType) => {
+  if (!answerId) throw new Error("缺少回答ID");
+  const vt = Number(voteType);
+  if (![1, 0, -1].includes(vt)) throw new Error("无效的投票类型");
+
+  const res = await http.post(`/answer/${answerId}/vote/`, {
+    vote_type: vt,
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "投票失败");
+  }
+
+  return res.data.data;
+};

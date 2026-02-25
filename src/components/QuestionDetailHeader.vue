@@ -7,23 +7,38 @@ import {
   UserAddOutlined,
 } from "@ant-design/icons-vue";
 import { formatCount } from "../utils/format";
+import { VOTE_STATUS } from "../constants/vote";
 
 const props = defineProps({
   question: { type: Object, default: null },
   loading: { type: Boolean, default: false },
+  followLoading: { type: Boolean, default: false },
+  voteLoading: { type: Boolean, default: false },
+  topicFollowLoadingMap: { type: Object, default: () => ({}) },
 });
+
+const emit = defineEmits([
+  "follow-question",
+  "vote-question",
+  "toggle-topic-follow",
+]);
 
 const activeTopicId = ref(null);
 let closeTimer = null;
 
 const topics = computed(() => props.question?.topics || []);
+const isQuestionUpvoted = computed(
+  () => Number(props.question?.user_vote_status) === VOTE_STATUS.UPVOTE,
+);
 
 const handleWriteAnswer = () => {
   message.info("写回答功能开发中");
 };
 
 const handleFollowQuestion = () => {
-  message.info("关注问题功能开发中");
+  if (!props.question) return;
+  if (props.followLoading) return;
+  emit("follow-question");
 };
 
 const handleInviteAnswer = () => {
@@ -31,11 +46,9 @@ const handleInviteAnswer = () => {
 };
 
 const handleQuestionUpvote = () => {
-  message.info("好问题功能开发中");
-};
-
-const handleToggleTopicFollow = () => {
-  message.info("关注话题功能开发中");
+  if (!props.question) return;
+  if (props.voteLoading) return;
+  emit("vote-question");
 };
 
 const handleTopicEnter = (id) => {
@@ -66,6 +79,16 @@ const handleTopicIconError = (event) => {
 };
 
 const formatTopicStat = (value) => formatCount(value || 0);
+
+const isTopicFollowLoading = (topicId) =>
+  Boolean(props.topicFollowLoadingMap?.[topicId]);
+
+const handleToggleTopicFollow = (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  if (isTopicFollowLoading(id)) return;
+  emit("toggle-topic-follow", topic);
+};
 </script>
 
 <template>
@@ -125,9 +148,13 @@ const formatTopicStat = (value) => formatCount(value || 0);
                       <button
                         class="topic-follow"
                         type="button"
-                        @click.stop="handleToggleTopicFollow"
+                        :disabled="isTopicFollowLoading(t.id)"
+                        @click.stop="handleToggleTopicFollow(t)"
                       >
-                        <template v-if="t.is_following">已关注</template>
+                        <template v-if="isTopicFollowLoading(t.id)"
+                          >处理中</template
+                        >
+                        <template v-else-if="t.is_following">已关注</template>
                         <template v-else>+ 关注</template>
                       </button>
                     </div>
@@ -144,7 +171,12 @@ const formatTopicStat = (value) => formatCount(value || 0);
             <button class="btn primary" type="button" @click="handleWriteAnswer">
               写回答
             </button>
-            <button class="btn outline" type="button" @click="handleFollowQuestion">
+            <button
+              class="btn outline"
+              type="button"
+              :disabled="followLoading"
+              @click="handleFollowQuestion"
+            >
               <UserAddOutlined />
               <span>{{ question.is_following ? "已关注问题" : "关注问题" }}</span>
             </button>
@@ -153,7 +185,13 @@ const formatTopicStat = (value) => formatCount(value || 0);
               <span>邀请回答</span>
             </button>
 
-            <button class="btn like" type="button" @click="handleQuestionUpvote">
+            <button
+              class="btn like"
+              type="button"
+              :class="{ active: isQuestionUpvoted }"
+              :disabled="voteLoading"
+              @click="handleQuestionUpvote"
+            >
               <LikeFilled />
               <span>好问题 {{ formatCount(question.upvote_count || 0) }}</span>
             </button>
@@ -350,6 +388,11 @@ const formatTopicStat = (value) => formatCount(value || 0);
   border-color: var(--brand-color-dark);
 }
 
+.topic-follow:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
 .q-title {
   margin: 0;
   font-size: 34px;
@@ -427,6 +470,15 @@ const formatTopicStat = (value) => formatCount(value || 0);
 
 .btn.like:hover {
   color: var(--brand-color);
+}
+
+.btn.like.active {
+  color: var(--brand-color);
+}
+
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
 }
 
 .q-stats {

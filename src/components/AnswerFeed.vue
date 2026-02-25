@@ -3,9 +3,11 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import {
   CommentOutlined,
+  DislikeFilled,
   DislikeOutlined,
   LikeFilled,
   StarOutlined,
+  StarFilled,
 } from "@ant-design/icons-vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatCount, formatDateTimeMinute } from "../utils/format";
@@ -16,9 +18,11 @@ const props = defineProps({
   loadingMore: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无回答" },
+  voteLoadingMap: { type: Object, default: () => ({}) },
+  collectLoadingMap: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(["load-more"]);
+const emit = defineEmits(["load-more", "vote", "collect"]);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -60,22 +64,34 @@ onBeforeUnmount(() => {
 });
 
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
-
-const handleUpvote = () => {
-  message.info("赞同功能开发中");
-};
-
-const handleDownvote = () => {
-  message.info("暂踩功能开发中");
-};
+const isDownvoted = (status) => Number(status) === VOTE_STATUS.DOWNVOTE;
 
 const handleComment = () => {
   message.info("评论功能开发中");
 };
 
-const handleCollect = () => {
-  message.info("收藏功能开发中");
+const isVoting = (id) => Boolean(props.voteLoadingMap?.[id]);
+const isCollecting = (id) => Boolean(props.collectLoadingMap?.[id]);
+
+const handleUpvote = (item) => {
+  if (!item?.id) return;
+  if (isVoting(item.id)) return;
+  emit("vote", item, VOTE_STATUS.UPVOTE);
 };
+
+const handleDownvote = (item) => {
+  if (!item?.id) return;
+  if (isVoting(item.id)) return;
+  emit("vote", item, VOTE_STATUS.DOWNVOTE);
+};
+
+const handleCollect = (item) => {
+  if (!item?.id) return;
+  if (isCollecting(item.id)) return;
+  emit("collect", item);
+};
+
+const isCollected = (value) => Boolean(value);
 </script>
 
 <template>
@@ -107,7 +123,8 @@ const handleCollect = () => {
               class="vote-btn"
               :class="{ voted: isUpvoted(item?.user_vote_status) }"
               type="button"
-              @click="handleUpvote"
+              :disabled="isVoting(item?.id)"
+              @click="handleUpvote(item)"
             >
               <LikeFilled />
               <span class="action-text">
@@ -117,10 +134,17 @@ const handleCollect = () => {
 
             <button
               class="action-meta link icon-only"
+              :class="{ downvoted: isDownvoted(item?.user_vote_status) }"
               type="button"
-              @click="handleDownvote"
+              :disabled="isVoting(item?.id)"
+              @click="handleDownvote(item)"
             >
-              <DislikeOutlined />
+              <template v-if="isDownvoted(item?.user_vote_status)">
+                <DislikeFilled />
+              </template>
+              <template v-else>
+                <DislikeOutlined />
+              </template>
             </button>
 
             <button class="action-meta link" type="button" @click="handleComment">
@@ -130,9 +154,22 @@ const handleCollect = () => {
               </span>
             </button>
 
-            <button class="action-meta link" type="button" @click="handleCollect">
-              <StarOutlined />
-              <span class="action-text">收藏</span>
+            <button
+              class="action-meta link collect-btn"
+              :class="{ collected: isCollected(item?.is_collected) }"
+              type="button"
+              :disabled="isCollecting(item?.id)"
+              @click="handleCollect(item)"
+            >
+              <template v-if="isCollected(item?.is_collected)">
+                <StarFilled />
+              </template>
+              <template v-else>
+                <StarOutlined />
+              </template>
+              <span class="action-text">{{
+                isCollected(item?.is_collected) ? "已收藏" : "收藏"
+              }}</span>
             </button>
           </div>
         </div>
@@ -275,6 +312,24 @@ const handleCollect = () => {
 
 .action-meta.link:hover {
   color: var(--brand-color);
+}
+
+.action-meta.link:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.action-meta.link.icon-only.downvoted {
+  color: #ef4444;
+}
+
+.collect-btn.collected {
+  color: #f59e0b;
+}
+
+.collect-btn.collected:hover {
+  color: #f59e0b;
 }
 
 .sentinel {
