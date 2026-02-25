@@ -5,6 +5,7 @@ import { useRouter } from "vue-router";
 import { DownOutlined } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import { fetchFollowingQuestionList, fetchQuestionList } from "../api/question";
+import { voteAnswer } from "../api/answer";
 import {
   fetchFollowingTopics,
   fetchTopicList,
@@ -12,6 +13,7 @@ import {
 } from "../api/topic";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
+import { VOTE_STATUS } from "../constants/vote";
 import {
   HOME_FOLLOW_LABEL_MAP,
   HOME_FOLLOW_TAB_LIST,
@@ -20,6 +22,7 @@ import {
 } from "../constants/homeNav";
 import TopicList from "../components/TopicList.vue";
 import QuestionList from "../components/QuestionList.vue";
+import CollectAnswerModal from "../components/CollectAnswerModal.vue";
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -61,6 +64,14 @@ const followTopicLoading = ref(false);
 const followTopicLoadingMore = ref(false);
 const followTopicFollowLoadingMap = ref({});
 const followTopicKeyword = ref("");
+
+// 问答/关注问题：回答投票（赞同/取消）loading map（按 answerId 锁）
+const qaVoteLoadingMap = ref({});
+
+// 问答/关注问题：收藏弹窗（对 top_answer 进行收藏）
+const collectModalOpen = ref(false);
+const collectAnswerId = ref("");
+const collectAnswerLabel = ref("");
 
 const isFollowActive = computed(
   () =>
@@ -132,6 +143,81 @@ const handleSelectNav = (key) => {
   }
 
   message.info("该模块开发中");
+};
+
+const setMapFlag = (mapRef, key, value) => {
+  mapRef.value = { ...(mapRef.value || {}), [key]: Boolean(value) };
+};
+
+const clearMapFlag = (mapRef, key) => {
+  const next = { ...(mapRef.value || {}) };
+  delete next[key];
+  mapRef.value = next;
+};
+
+const handleVoteTopAnswer = async (_question, answer) => {
+  const answerId = answer?.id;
+  if (!answerId) return;
+  if (qaVoteLoadingMap.value?.[answerId]) return;
+
+  const current = Number(answer?.user_vote_status || 0);
+  const voteType =
+    current === VOTE_STATUS.UPVOTE ? VOTE_STATUS.NONE : VOTE_STATUS.UPVOTE;
+
+  setMapFlag(qaVoteLoadingMap, answerId, true);
+  try {
+    const patch = await voteAnswer(answerId, voteType);
+
+    // 合并更新：投票接口不返回 collected_count，避免覆盖
+    if (patch?.upvote_count !== undefined) answer.upvote_count = patch.upvote_count;
+    if (patch?.comment_count !== undefined) answer.comment_count = patch.comment_count;
+    if (patch?.user_vote_status !== undefined)
+      answer.user_vote_status = patch.user_vote_status;
+    if (patch?.modified !== undefined) answer.modified = patch.modified;
+    if (patch?.is_collected !== undefined) answer.is_collected = patch.is_collected;
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "投票失败");
+  } finally {
+    clearMapFlag(qaVoteLoadingMap, answerId);
+  }
+};
+
+const openCollectModal = (_questionItem, answer) => {
+  const answerId = answer?.id;
+  if (!answerId) return;
+  collectAnswerId.value = answerId;
+  collectAnswerLabel.value = `${
+    answer?.respondent?.username || "匿名用户"
+  } 的回答`;
+  collectModalOpen.value = true;
+};
+
+const applyCollectResultToTopAnswer = (answerId, { beforeSize, afterSize }) => {
+  const applyToList = (items) => {
+    const hit = (items || []).find((q) => q?.top_answer?.id === answerId);
+    if (!hit?.top_answer) return false;
+    hit.top_answer.is_collected = afterSize > 0;
+
+    // 若存在 collected_count（有的接口会带），按用户去重：仅 0<->1 跨越时变化
+    if (hit.top_answer.collected_count !== undefined) {
+      if (beforeSize === 0 && afterSize === 1) {
+        hit.top_answer.collected_count = Math.max(
+          0,
+          Number(hit.top_answer.collected_count || 0) + 1,
+        );
+      } else if (beforeSize === 1 && afterSize === 0) {
+        hit.top_answer.collected_count = Math.max(
+          0,
+          Number(hit.top_answer.collected_count || 0) - 1,
+        );
+      }
+    }
+    return true;
+  };
+
+  if (applyToList(list.value)) return;
+  applyToList(followQuestionList.value);
 };
 
 const fetchQuestions = async ({ reset } = { reset: false }) => {
@@ -539,7 +625,10 @@ onMounted(() => {
               :loading="loading"
               :loadingMore="loadingMore"
               :hasMore="qaHasMore"
+              :voteLoadingMap="qaVoteLoadingMap"
               @load-more="handleLoadMoreQuestions"
+              @vote="handleVoteTopAnswer"
+              @collect="openCollectModal"
             />
           </template>
 
@@ -549,8 +638,11 @@ onMounted(() => {
               :loading="followQuestionLoading"
               :loadingMore="followQuestionLoadingMore"
               :hasMore="followQuestionHasMore"
+              :voteLoadingMap="qaVoteLoadingMap"
               emptyText="暂无关注的问题"
               @load-more="handleLoadMoreFollowQuestions"
+              @vote="handleVoteTopAnswer"
+              @collect="openCollectModal"
             />
           </template>
 
@@ -613,6 +705,16 @@ onMounted(() => {
     </div>
 
     <a-back-top class="huzhi-back-top" :visibilityHeight="300" />
+
+    <CollectAnswerModal
+      v-model:open="collectModalOpen"
+      :answerId="collectAnswerId"
+      :answerLabel="collectAnswerLabel"
+      @applied="
+        ({ answerId, beforeSize, afterSize }) =>
+          applyCollectResultToTopAnswer(answerId, { beforeSize, afterSize })
+      "
+    />
   </div>
 </template>
 

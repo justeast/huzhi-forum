@@ -24,7 +24,7 @@ import {
   fetchUserProfile,
   patchUserProfile,
 } from "../api/user";
-import { fetchUserAnswerList } from "../api/answer";
+import { fetchUserAnswerList, voteAnswer } from "../api/answer";
 import { fetchFollowingQuestionList, fetchUserQuestionList } from "../api/question";
 import { fetchFollowingTopics, toggleTopicFollow } from "../api/topic";
 import { uploadToCos } from "../utils/cosUploader";
@@ -35,6 +35,7 @@ import {
   updateCollectionFolder,
 } from "../api/collection";
 import { formatDateTimeMinute } from "../utils/format";
+import { VOTE_STATUS } from "../constants/vote";
 import {
   PROFILE_FOLLOW_TAB,
   PROFILE_FOLLOW_TAB_LIST,
@@ -116,6 +117,7 @@ const answerPage = ref(1);
 const answerHasMore = ref(true);
 const answerLoading = ref(false);
 const answerLoadingMore = ref(false);
+const answerVoteLoadingMap = ref({});
 
 // 提问列表：展示“我提出的问题”
 const QUESTION_PAGE_SIZE = 10;
@@ -442,6 +444,44 @@ const handleClickAnswerItem = (item) => {
   const questionId = item?.question?.id;
   if (!questionId) return;
   router.push(`/question/${questionId}`);
+};
+
+const setMapFlag = (mapRef, key, value) => {
+  mapRef.value = { ...(mapRef.value || {}), [key]: Boolean(value) };
+};
+
+const clearMapFlag = (mapRef, key) => {
+  const next = { ...(mapRef.value || {}) };
+  delete next[key];
+  mapRef.value = next;
+};
+
+// 个人中心-回答：赞同/取消赞同（不做“踩”）
+const handleVoteUserAnswer = async (item) => {
+  const answerId = item?.id;
+  if (!answerId) return;
+  if (answerVoteLoadingMap.value?.[answerId]) return;
+
+  const current = Number(item?.user_vote_status || 0);
+  const voteType =
+    current === VOTE_STATUS.UPVOTE ? VOTE_STATUS.NONE : VOTE_STATUS.UPVOTE;
+
+  setMapFlag(answerVoteLoadingMap, answerId, true);
+  try {
+    const patch = await voteAnswer(answerId, voteType);
+
+    // 合并更新：投票接口不返回 collected_count
+    if (patch?.upvote_count !== undefined) item.upvote_count = patch.upvote_count;
+    if (patch?.comment_count !== undefined) item.comment_count = patch.comment_count;
+    if (patch?.user_vote_status !== undefined)
+      item.user_vote_status = patch.user_vote_status;
+    if (patch?.modified !== undefined) item.modified = patch.modified;
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "投票失败");
+  } finally {
+    clearMapFlag(answerVoteLoadingMap, answerId);
+  }
 };
 
 const handleClickUserQuestionItem = (item) => {
@@ -1160,8 +1200,10 @@ onMounted(() => {
                   :loading="answerLoading"
                   :loadingMore="answerLoadingMore"
                   :hasMore="answerHasMore"
+                  :voteLoadingMap="answerVoteLoadingMap"
                   emptyText="暂无回答"
                   @load-more="handleLoadMoreAnswers"
+                  @vote="handleVoteUserAnswer"
                   @item-click="handleClickAnswerItem"
                 />
               </div>

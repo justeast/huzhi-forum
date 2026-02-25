@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { message } from "ant-design-vue";
 import { CommentOutlined, LikeFilled } from "@ant-design/icons-vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatDateTimeMinute, toPreviewText } from "../utils/format";
@@ -11,9 +10,10 @@ const props = defineProps({
   loadingMore: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无回答" },
+  voteLoadingMap: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(["load-more", "item-click"]);
+const emit = defineEmits(["load-more", "item-click", "vote"]);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -55,9 +55,17 @@ onBeforeUnmount(() => {
 });
 
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
+const isVoting = (id) => Boolean(props.voteLoadingMap?.[id]);
 
 const handleClickItem = (item) => {
   emit("item-click", item);
+};
+
+const handleVote = (item) => {
+  const id = item?.id;
+  if (!id) return;
+  if (isVoting(id)) return;
+  emit("vote", item);
 };
 </script>
 
@@ -87,7 +95,8 @@ const handleClickItem = (item) => {
                 class="vote-btn"
                 :class="{ voted: isUpvoted(item?.user_vote_status) }"
                 type="button"
-                @click.stop="message.info('赞同功能开发中')"
+                :disabled="isVoting(item?.id)"
+                @click.stop="handleVote(item)"
               >
                 <LikeFilled />
                 <span class="action-text">{{ Number(item?.upvote_count || 0) }} 赞同</span>
@@ -242,4 +251,3 @@ const handleClickItem = (item) => {
   padding-bottom: 8px;
 }
 </style>
-

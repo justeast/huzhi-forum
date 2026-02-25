@@ -2,7 +2,12 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
-import { CommentOutlined, LikeFilled, StarOutlined } from "@ant-design/icons-vue";
+import {
+  CommentOutlined,
+  LikeFilled,
+  StarFilled,
+  StarOutlined,
+} from "@ant-design/icons-vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatCount, toPreviewText } from "../utils/format";
 
@@ -14,9 +19,10 @@ const props = defineProps({
   loadingMore: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无内容" },
+  voteLoadingMap: { type: Object, default: () => ({}) },
 });
 
-const emit = defineEmits(["load-more", "collect"]);
+const emit = defineEmits(["load-more", "vote", "collect"]);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -58,16 +64,32 @@ onBeforeUnmount(() => {
 });
 
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
-
-const handleCollect = () => {
-  emit("collect");
-  message.info("收藏功能开发中");
-};
+const isVoting = (answerId) => Boolean(props.voteLoadingMap?.[answerId]);
+const isCollected = (value) => Boolean(value);
 
 const handleClickItem = (item) => {
   const id = item?.id;
   if (!id) return;
   router.push(`/question/${id}`);
+};
+
+const handleVote = (item) => {
+  const ans = item?.top_answer;
+  if (!ans?.id) {
+    message.info("暂无回答，无法赞同");
+    return;
+  }
+  if (isVoting(ans.id)) return;
+  emit("vote", item, ans);
+};
+
+const handleCollectAnswer = (item) => {
+  const ans = item?.top_answer;
+  if (!ans?.id) {
+    message.info("暂无回答，无法收藏");
+    return;
+  }
+  emit("collect", item, ans);
 };
 </script>
 
@@ -106,7 +128,8 @@ const handleClickItem = (item) => {
               class="vote-btn"
               :class="{ voted: isUpvoted(item.top_answer?.user_vote_status) }"
               type="button"
-              @click.stop="message.info('赞同功能开发中')"
+              :disabled="!item.top_answer?.id || isVoting(item.top_answer?.id)"
+              @click.stop="handleVote(item)"
             >
               <LikeFilled />
               <span class="action-text">
@@ -123,11 +146,20 @@ const handleClickItem = (item) => {
 
             <button
               class="action-meta link"
+              :class="{ collected: isCollected(item.top_answer?.is_collected) }"
               type="button"
-              @click.stop="handleCollect"
+              :disabled="!item.top_answer?.id"
+              @click.stop="handleCollectAnswer(item)"
             >
-              <StarOutlined />
-              <span class="action-text">收藏</span>
+              <template v-if="isCollected(item.top_answer?.is_collected)">
+                <StarFilled />
+              </template>
+              <template v-else>
+                <StarOutlined />
+              </template>
+              <span class="action-text">{{
+                isCollected(item.top_answer?.is_collected) ? "已收藏" : "收藏"
+              }}</span>
             </button>
           </div>
         </div>
@@ -249,6 +281,20 @@ const handleClickItem = (item) => {
 
 .action-meta.link:hover {
   color: var(--brand-color);
+}
+
+.action-meta.link:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.action-meta.link.collected {
+  color: #f59e0b;
+}
+
+.action-meta.link.collected:hover {
+  color: #f59e0b;
 }
 
 .sentinel {
