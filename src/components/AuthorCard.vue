@@ -9,7 +9,7 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
 });
 
-const avatarUrl = computed(() => props.user?.avatar || "");
+const avatarUrl = computed(() => props.user?.avatar || "/default-avatar.png");
 const username = computed(() => props.user?.username || "匿名用户");
 const bio = computed(() => props.user?.bio || "暂无简介");
 
@@ -277,4 +277,3 @@ const handleMessage = () => {
   }
 }
 </style>
-

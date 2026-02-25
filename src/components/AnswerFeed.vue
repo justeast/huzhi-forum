@@ -92,6 +92,8 @@ const handleCollect = (item) => {
 };
 
 const isCollected = (value) => Boolean(value);
+
+const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
 </script>
 
 <template>
@@ -102,7 +104,7 @@ const isCollected = (value) => Boolean(value);
       <div v-else class="list">
         <div v-for="item in answers" :key="item.id" class="row">
           <div class="head">
-            <a-avatar :size="36" :src="item?.respondent?.avatar" />
+            <a-avatar :size="36" :src="getAvatar(item)" />
             <div class="meta">
               <div class="name">
                 {{ item?.respondent?.username || "匿名用户" }}
