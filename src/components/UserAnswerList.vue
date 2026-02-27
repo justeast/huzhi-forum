@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { CommentOutlined, LikeFilled } from "@ant-design/icons-vue";
+import AnswerCommentSection from "./AnswerCommentSection.vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatDateTimeMinute, toPreviewText } from "../utils/format";
 
@@ -17,6 +18,7 @@ const emit = defineEmits(["load-more", "item-click", "vote"]);
 
 const sentinelRef = ref(null);
 let observer = null;
+const openCommentAnswerId = ref(null);
 
 const showEmpty = computed(() => !props.loading && props.answers.length === 0);
 
@@ -67,6 +69,14 @@ const handleVote = (item) => {
   if (isVoting(id)) return;
   emit("vote", item);
 };
+
+const handleToggleComment = (item) => {
+  const id = item?.id;
+  if (!id) return;
+  const current = String(openCommentAnswerId.value || "");
+  const next = String(id || "");
+  openCommentAnswerId.value = current === next ? null : id;
+};
 </script>
 
 <template>
@@ -102,17 +112,37 @@ const handleVote = (item) => {
                 <span class="action-text">{{ Number(item?.upvote_count || 0) }} 赞同</span>
               </button>
 
-              <div class="action-meta">
+              <button
+                class="action-meta link"
+                type="button"
+                :disabled="!item?.id"
+                @click.stop="handleToggleComment(item)"
+              >
                 <CommentOutlined />
                 <span class="action-text">
                   {{ Number(item?.comment_count || 0) }} 评论
                 </span>
-              </div>
+              </button>
             </div>
 
             <div class="time">
               {{ formatDateTimeMinute(item?.created) }}
             </div>
+          </div>
+
+          <div
+            v-if="String(openCommentAnswerId) === String(item?.id)"
+            class="comment-wrap"
+            @click.stop
+          >
+            <AnswerCommentSection
+              :answerId="item?.id"
+              :answerAuthorId="item?.respondent?.id"
+              :commentCount="item?.comment_count"
+              :pageSize="20"
+              @count-change="(v) => (item.comment_count = v)"
+              @collapse="() => handleToggleComment(item)"
+            />
           </div>
         </div>
       </div>
@@ -223,6 +253,28 @@ const handleVote = (item) => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+.action-meta.link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+}
+
+.action-meta.link:hover {
+  color: var(--brand-color);
+}
+
+.action-meta.link:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.comment-wrap {
+  margin-top: 6px;
 }
 
 .time {

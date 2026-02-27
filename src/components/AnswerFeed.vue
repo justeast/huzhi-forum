@@ -1,6 +1,5 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { message } from "ant-design-vue";
 import {
   CommentOutlined,
   DislikeFilled,
@@ -9,6 +8,7 @@ import {
   StarOutlined,
   StarFilled,
 } from "@ant-design/icons-vue";
+import AnswerCommentSection from "./AnswerCommentSection.vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatCount, formatDateTimeMinute } from "../utils/format";
 
@@ -23,6 +23,8 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["load-more", "vote", "collect"]);
+
+const openCommentAnswerId = ref(null);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -66,10 +68,6 @@ onBeforeUnmount(() => {
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
 const isDownvoted = (status) => Number(status) === VOTE_STATUS.DOWNVOTE;
 
-const handleComment = () => {
-  message.info("评论功能开发中");
-};
-
 const isVoting = (id) => Boolean(props.voteLoadingMap?.[id]);
 const isCollecting = (id) => Boolean(props.collectLoadingMap?.[id]);
 
@@ -89,6 +87,13 @@ const handleCollect = (item) => {
   if (!item?.id) return;
   if (isCollecting(item.id)) return;
   emit("collect", item);
+};
+
+const handleToggleComment = (item) => {
+  if (!item?.id) return;
+  const current = String(openCommentAnswerId.value || "");
+  const next = String(item.id || "");
+  openCommentAnswerId.value = current === next ? null : item.id;
 };
 
 const isCollected = (value) => Boolean(value);
@@ -149,7 +154,12 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
               </template>
             </button>
 
-            <button class="action-meta link" type="button" @click="handleComment">
+            <button
+              class="action-meta link"
+              type="button"
+              :disabled="!item?.id"
+              @click="handleToggleComment(item)"
+            >
               <CommentOutlined />
               <span class="action-text">
                 {{ Number(item?.comment_count || 0) }} 评论
@@ -173,6 +183,20 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
                 isCollected(item?.is_collected) ? "已收藏" : "收藏"
               }}</span>
             </button>
+          </div>
+
+          <div
+            v-if="String(openCommentAnswerId) === String(item?.id)"
+            class="comment-wrap"
+          >
+            <AnswerCommentSection
+              :answerId="item?.id"
+              :answerAuthorId="item?.respondent?.id"
+              :commentCount="item?.comment_count"
+              :pageSize="20"
+              @count-change="(v) => (item.comment_count = v)"
+              @collapse="() => handleToggleComment(item)"
+            />
           </div>
         </div>
       </div>
@@ -332,6 +356,10 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
 
 .collect-btn.collected:hover {
   color: #f59e0b;
+}
+
+.comment-wrap {
+  margin-top: 6px;
 }
 
 .sentinel {

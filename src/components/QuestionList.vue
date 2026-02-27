@@ -8,6 +8,7 @@ import {
   StarFilled,
   StarOutlined,
 } from "@ant-design/icons-vue";
+import AnswerCommentSection from "./AnswerCommentSection.vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatCount, toPreviewText } from "../utils/format";
 
@@ -26,6 +27,7 @@ const emit = defineEmits(["load-more", "vote", "collect"]);
 
 const sentinelRef = ref(null);
 let observer = null;
+const openCommentAnswerId = ref(null);
 
 const showEmpty = computed(() => !props.loading && props.questions.length === 0);
 
@@ -91,6 +93,18 @@ const handleCollectAnswer = (item) => {
   }
   emit("collect", item, ans);
 };
+
+const handleToggleComment = (item) => {
+  const ans = item?.top_answer;
+  if (!ans?.id) {
+    message.info("暂无回答，无法查看评论");
+    return;
+  }
+
+  const current = String(openCommentAnswerId.value || "");
+  const next = String(ans.id || "");
+  openCommentAnswerId.value = current === next ? null : ans.id;
+};
 </script>
 
 <template>
@@ -137,12 +151,17 @@ const handleCollectAnswer = (item) => {
               </span>
             </button>
 
-            <div class="action-meta">
+            <button
+              class="action-meta link"
+              type="button"
+              :disabled="!item.top_answer?.id"
+              @click.stop="handleToggleComment(item)"
+            >
               <CommentOutlined />
               <span class="action-text">
                 {{ item.top_answer?.comment_count || 0 }} 条评论
               </span>
-            </div>
+            </button>
 
             <button
               class="action-meta link"
@@ -161,6 +180,21 @@ const handleCollectAnswer = (item) => {
                 isCollected(item.top_answer?.is_collected) ? "已收藏" : "收藏"
               }}</span>
             </button>
+          </div>
+
+          <div
+            v-if="String(openCommentAnswerId) === String(item.top_answer?.id)"
+            class="comment-wrap"
+            @click.stop
+          >
+            <AnswerCommentSection
+              :answerId="item.top_answer?.id"
+              :answerAuthorId="item.top_answer?.respondent?.id"
+              :commentCount="item.top_answer?.comment_count"
+              :pageSize="20"
+              @count-change="(v) => (item.top_answer.comment_count = v)"
+              @collapse="() => handleToggleComment(item)"
+            />
           </div>
         </div>
       </div>
@@ -295,6 +329,10 @@ const handleCollectAnswer = (item) => {
 
 .action-meta.link.collected:hover {
   color: #f59e0b;
+}
+
+.comment-wrap {
+  margin-top: 6px;
 }
 
 .sentinel {
