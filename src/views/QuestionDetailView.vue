@@ -1,7 +1,7 @@
 <script setup>
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { DownOutlined } from "@ant-design/icons-vue";
+import { DownOutlined, UserAddOutlined } from "@ant-design/icons-vue";
 import { useRoute } from "vue-router";
 import AppHeader from "../components/AppHeader.vue";
 import QuestionDetailHeader from "../components/QuestionDetailHeader.vue";
@@ -32,6 +32,8 @@ const headerKeyword = ref("");
 const handleHeaderSearch = () => {
   message.info("该页面暂不支持搜索，请在首页进行搜索");
 };
+
+const APP_HEADER_HEIGHT = 64;
 
 const questionId = computed(() => String(route.params?.id || ""));
 
@@ -73,6 +75,58 @@ const createCollectionForm = ref({
   title: "",
   description: "",
   is_public: true,
+});
+
+const stickyTriggerRef = ref(null);
+const stickyVisible = ref(false);
+let stickyObserver = null;
+
+const showStickyBar = computed(
+  () => stickyVisible.value && Boolean(question.value?.title),
+);
+
+const handleStickyWriteAnswer = () => {
+  message.info("写回答功能开发中");
+};
+
+const observeStickyTrigger = () => {
+  if (!stickyTriggerRef.value) return;
+  if (stickyObserver) stickyObserver.disconnect();
+
+  stickyObserver = new IntersectionObserver(
+    (entries) => {
+      const entry = entries?.[0];
+      if (!entry) return;
+      // trigger 不可见 => 说明已滚过问题头部，显示吸顶栏
+      stickyVisible.value = !entry.isIntersecting;
+    },
+    {
+      root: null,
+      // 顶部被 AppHeader 占用，缩小可视区域，让切换更贴近“标题滚出 AppHeader 下方”
+      rootMargin: `-${APP_HEADER_HEIGHT}px 0px 0px 0px`,
+      threshold: 0,
+    },
+  );
+
+  stickyObserver.observe(stickyTriggerRef.value);
+};
+
+watch(questionId, () => {
+  // 路由切换时先隐藏，避免短暂闪烁
+  stickyVisible.value = false;
+});
+
+watch(stickyTriggerRef, () => {
+  observeStickyTrigger();
+});
+
+onMounted(() => {
+  observeStickyTrigger();
+});
+
+onBeforeUnmount(() => {
+  if (stickyObserver) stickyObserver.disconnect();
+  stickyObserver = null;
 });
 
 const mergeById = (items, incoming) => {
@@ -571,6 +625,37 @@ const answerTotalText = computed(() => {
   <div class="qd-page">
     <AppHeader v-model="headerKeyword" @search="handleHeaderSearch" />
 
+    <div class="qd-sticky" :class="{ show: showStickyBar }">
+      <div class="qd-sticky-inner">
+        <div class="qd-sticky-title" :title="question?.title || ''">
+          {{ question?.title || "" }}
+        </div>
+
+        <div class="qd-sticky-actions">
+          <button
+            class="sticky-btn primary"
+            type="button"
+            :disabled="!question || questionFollowLoading"
+            @click="handleFollowQuestion"
+          >
+            <UserAddOutlined />
+            <span>{{
+              question?.is_following ? "已关注问题" : "关注问题"
+            }}</span>
+          </button>
+
+          <button
+            class="sticky-btn outline"
+            type="button"
+            :disabled="!question"
+            @click="handleStickyWriteAnswer"
+          >
+            写回答
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="container">
       <QuestionDetailHeader
         :question="question"
@@ -582,6 +667,8 @@ const answerTotalText = computed(() => {
         @vote-question="handleVoteQuestion"
         @toggle-topic-follow="handleToggleTopicFollow"
       />
+
+      <div ref="stickyTriggerRef" class="qd-sticky-trigger" aria-hidden="true"></div>
 
       <section class="answer-grid">
         <div class="left">
@@ -636,6 +723,8 @@ const answerTotalText = computed(() => {
         </aside>
       </section>
     </div>
+
+    <a-back-top class="huzhi-back-top" :visibilityHeight="300" />
 
     <a-modal
       v-model:open="collectModalOpen"
@@ -759,6 +848,99 @@ const answerTotalText = computed(() => {
   background: var(--bg);
 }
 
+.qd-sticky {
+  position: fixed;
+  top: 64px;
+  left: 0;
+  right: 0;
+  z-index: 9;
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: saturate(180%) blur(10px);
+  border-bottom: 1px solid var(--line);
+  transform: translateY(-110%);
+  opacity: 0;
+  pointer-events: none;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.qd-sticky.show {
+  transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.qd-sticky-inner {
+  height: 54px;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.qd-sticky-title {
+  min-width: 0;
+  flex: 1;
+  font-size: 16px;
+  font-weight: 900;
+  color: #111827;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.qd-sticky-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.sticky-btn {
+  height: 34px;
+  padding: 0 14px;
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 900;
+  border: 1px solid transparent;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sticky-btn.primary {
+  background: var(--brand-color);
+  border-color: var(--brand-color);
+  color: #fff;
+}
+
+.sticky-btn.primary:hover {
+  background: var(--brand-color-dark);
+  border-color: var(--brand-color-dark);
+}
+
+.sticky-btn.outline {
+  border-color: rgba(120, 200, 65, 0.55);
+  color: var(--brand-color);
+}
+
+.sticky-btn.outline:hover {
+  border-color: var(--brand-color);
+  background: rgba(120, 200, 65, 0.1);
+}
+
+.sticky-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.75;
+}
+
+.qd-sticky-trigger {
+  height: 1px;
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -836,6 +1018,21 @@ const answerTotalText = computed(() => {
   position: sticky;
   top: 82px;
   height: fit-content;
+}
+
+:global(.huzhi-back-top .ant-float-btn) {
+  width: 44px;
+  height: 44px;
+}
+
+:global(.huzhi-back-top .ant-float-btn-icon),
+:global(.huzhi-back-top .ant-float-btn-content),
+:global(.huzhi-back-top .anticon) {
+  color: var(--brand-color) !important;
+}
+
+:global(.huzhi-back-top svg) {
+  fill: var(--brand-color) !important;
 }
 
 .side-card {
