@@ -16,3 +16,58 @@ input::-ms-clear {
 .ant-float-btn-back-top .anticon {
   color: var(--brand-color) !important;
 }
+
+/* 提问弹窗（AskQuestionModal）：由于 Modal Teleport 到 body，样式需用全局覆盖 */
+.ant-modal.ask-question-modal {
+  width: 760px !important;
+  max-width: calc(100vw - 32px) !important;
+}
+
+.ant-modal.ask-question-modal .ant-modal-content {
+  border-radius: 0 !important; /* 直角矩形 */
+}
+
+.ant-modal.ask-question-modal .ant-modal-body {
+  padding: 0 !important;
+}
+
+/* 去掉标题/内容输入的灰底与外框（包括 allow-clear 产生的 affix wrapper） */
+.ant-modal.ask-question-modal .ant-input,
+.ant-modal.ask-question-modal textarea.ant-input,
+.ant-modal.ask-question-modal .ant-input-affix-wrapper,
+.ant-modal.ask-question-modal .ant-input-affix-wrapper-focused,
+.ant-modal.ask-question-modal .ant-input-textarea,
+.ant-modal.ask-question-modal .ant-input-textarea-affix-wrapper {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+}
+
+.ant-modal.ask-question-modal .ant-input-affix-wrapper,
+.ant-modal.ask-question-modal .ant-input-textarea-affix-wrapper {
+  padding: 0 !important;
+}
+
+/* 标题：仅保留底部划线 */
+.ant-modal.ask-question-modal .title-input.ant-input-affix-wrapper,
+.ant-modal.ask-question-modal .title-input .ant-input-affix-wrapper {
+  border-bottom: 2px solid rgba(148, 163, 184, 0.45) !important;
+  padding: 6px 0 10px !important;
+}
+
+.ant-modal.ask-question-modal .title-input.ant-input-affix-wrapper-focused,
+.ant-modal.ask-question-modal .title-input .ant-input-affix-wrapper-focused {
+  border-bottom-color: var(--brand-color) !important;
+}
+
+.ant-modal.ask-question-modal .title-input .ant-input {
+  padding: 0 !important;
+  font-size: 18px !important;
+  font-weight: 900 !important;
+}
+
+.ant-modal.ask-question-modal .raw-input textarea.ant-input,
+.ant-modal.ask-question-modal .content-input textarea.ant-input {
+  padding: 0 !important;
+}

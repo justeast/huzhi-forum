@@ -52,3 +52,27 @@ export const toggleTopicFollow = async (topicId, action) => {
 
   return res.data.data;
 };
+
+// 创建话题（POST /topic/）
+// payload: { name: string, icon?: string, introduction?: string }
+export const createTopic = async (payload = {}) => {
+  const name = String(payload?.name || "").trim();
+  if (!name) throw new Error("话题名称不能为空");
+
+  const body = {
+    name,
+  };
+
+  if (payload?.icon !== undefined) body.icon = payload.icon || null;
+  if (payload?.introduction !== undefined)
+    body.introduction = payload.introduction || null;
+
+  const res = await http.post("/topic/", body);
+
+  // 文档为 201 Created，兼容部分环境返回 200
+  if (![200, 201].includes(Number(res?.status)) || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "创建话题失败");
+  }
+
+  return res.data.data;
+};

@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import {
@@ -11,6 +11,7 @@ import {
   UserOutlined,
 } from "@ant-design/icons-vue";
 import { useAuthStore } from "../stores/auth";
+import AskQuestionModal from "./AskQuestionModal.vue";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
@@ -20,6 +21,8 @@ const emit = defineEmits(["update:modelValue", "search"]);
 
 const router = useRouter();
 const authStore = useAuthStore();
+
+const askModalOpen = ref(false);
 
 const keyword = computed({
   get: () => props.modelValue,
@@ -38,7 +41,7 @@ const handleSearch = () => {
 };
 
 const handleCreateQuestion = () => {
-  message.info("提问题功能开发中");
+  askModalOpen.value = true;
 };
 
 const handleWriteAnswer = () => {
@@ -133,6 +136,8 @@ const handleLogout = () => {
       </div>
     </div>
   </header>
+
+  <AskQuestionModal v-model:open="askModalOpen" />
 </template>
 
 <style scoped>

@@ -101,3 +101,32 @@ export const voteQuestion = async (questionId, voteType) => {
 
   return res.data.data;
 };
+
+// 创建问题（POST /question/）
+// payload: { title: string, content?: string, topic_ids?: string[] }
+export const createQuestion = async (payload = {}) => {
+  const title = String(payload?.title || "").trim();
+  if (!title) throw new Error("问题标题不能为空");
+
+  const body = {
+    title,
+  };
+
+  const content = payload?.content;
+  if (content !== undefined) {
+    body.content = String(content || "");
+  }
+
+  if (Array.isArray(payload?.topic_ids)) {
+    body.topic_ids = payload.topic_ids.filter((x) => Boolean(x));
+  }
+
+  const res = await http.post("/question/", body);
+
+  // 文档为 201 Created，兼容部分环境返回 200
+  if (![200, 201].includes(Number(res?.status)) || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "创建问题失败");
+  }
+
+  return res.data.data;
+};
