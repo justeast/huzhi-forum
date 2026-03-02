@@ -16,12 +16,14 @@ const props = defineProps({
   followLoading: { type: Boolean, default: false },
   voteLoading: { type: Boolean, default: false },
   topicFollowLoadingMap: { type: Object, default: () => ({}) },
+  hasDraft: { type: Boolean, default: false },
 });
 
 const emit = defineEmits([
   "follow-question",
   "vote-question",
   "toggle-topic-follow",
+  "write-answer",
 ]);
 
 const activeTopicId = ref(null);
@@ -33,7 +35,7 @@ const isQuestionUpvoted = computed(
 );
 
 const handleWriteAnswer = () => {
-  message.info("写回答功能开发中");
+  emit("write-answer");
 };
 
 const handleFollowQuestion = () => {
@@ -177,7 +179,7 @@ const handleToggleTopicFollow = (topic) => {
 
           <div class="q-actions">
             <button class="btn primary" type="button" @click="handleWriteAnswer">
-              写回答
+              {{ hasDraft ? "编辑回答" : "写回答" }}
             </button>
             <button
               class="btn outline"

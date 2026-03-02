@@ -5,6 +5,7 @@ import { DownOutlined, UserAddOutlined } from "@ant-design/icons-vue";
 import { useRoute } from "vue-router";
 import AppHeader from "../components/AppHeader.vue";
 import QuestionDetailHeader from "../components/QuestionDetailHeader.vue";
+import AnswerComposer from "../components/AnswerComposer.vue";
 import AnswerFeed from "../components/AnswerFeed.vue";
 import AuthorCard from "../components/AuthorCard.vue";
 import {
@@ -85,8 +86,41 @@ const showStickyBar = computed(
   () => stickyVisible.value && Boolean(question.value?.title),
 );
 
+const composerRef = ref(null);
+const hasAnswerDraft = ref(false);
+
+const readAnswerDraftFlag = (qid) => {
+  const id = String(qid || "").trim();
+  if (!id) return false;
+  const key = `huzhi_draft_answer_${id}`;
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    return Boolean(String(data?.content || "").trim());
+  } catch {
+    return false;
+  }
+};
+
+watch(
+  questionId,
+  (id) => {
+    hasAnswerDraft.value = readAnswerDraftFlag(id);
+  },
+  { immediate: true },
+);
+
+const writeAnswerLabel = computed(() =>
+  hasAnswerDraft.value ? "编辑回答" : "写回答",
+);
+
+const openComposerAndScroll = () => {
+  composerRef.value?.openAndScroll?.();
+};
+
 const handleStickyWriteAnswer = () => {
-  message.info("写回答功能开发中");
+  openComposerAndScroll();
 };
 
 const observeStickyTrigger = () => {
@@ -614,6 +648,20 @@ const handleSortClick = () => {
   message.info("排序功能开发中");
 };
 
+const handleAnswerSubmitted = (created) => {
+  if (!created?.id) return;
+  // 新回答插入到列表顶部，便于用户立即看到
+  answers.value = [created, ...(answers.value || [])];
+  if (question.value) {
+    const prev = Number(question.value?.answer_count || 0);
+    question.value.answer_count = Math.max(prev + 1, answers.value.length);
+  }
+};
+
+const handleDraftChange = (val) => {
+  hasAnswerDraft.value = Boolean(val);
+};
+
 const answerTotalText = computed(() => {
   const total = question.value?.answer_count ?? answers.value?.length ?? 0;
   const num = Math.max(0, Number(total || 0));
@@ -650,7 +698,7 @@ const answerTotalText = computed(() => {
             :disabled="!question"
             @click="handleStickyWriteAnswer"
           >
-            写回答
+            {{ writeAnswerLabel }}
           </button>
         </div>
       </div>
@@ -663,7 +711,9 @@ const answerTotalText = computed(() => {
         :followLoading="questionFollowLoading"
         :voteLoading="questionVoteLoading"
         :topicFollowLoadingMap="topicFollowLoadingMap"
+        :hasDraft="hasAnswerDraft"
         @follow-question="handleFollowQuestion"
+        @write-answer="openComposerAndScroll"
         @vote-question="handleVoteQuestion"
         @toggle-topic-follow="handleToggleTopicFollow"
       />
@@ -672,6 +722,14 @@ const answerTotalText = computed(() => {
 
       <section class="answer-grid">
         <div class="left">
+          <AnswerComposer
+            ref="composerRef"
+            :questionId="questionId"
+            :scrollOffset="APP_HEADER_HEIGHT + 56"
+            @submitted="handleAnswerSubmitted"
+            @draft-change="handleDraftChange"
+          />
+
           <div class="answers-head">
             <div class="answers-title">
               {{ answerTotalText }}

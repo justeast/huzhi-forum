@@ -54,3 +54,25 @@ export const voteAnswer = async (answerId, voteType) => {
 
   return res.data.data;
 };
+
+// 创建回答（POST /answer/）
+// payload: { question_id: string, content: string }
+export const createAnswer = async (payload = {}) => {
+  const questionId = String(payload?.question_id || "").trim();
+  const content = String(payload?.content || "");
+
+  if (!questionId) throw new Error("缺少问题ID");
+  if (!content.trim()) throw new Error("回答内容不能为空");
+
+  const res = await http.post("/answer/", {
+    question_id: questionId,
+    content,
+  });
+
+  // 创建成功为 201
+  if (res?.status !== 201 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "创建回答失败");
+  }
+
+  return res.data.data;
+};
