@@ -6,7 +6,7 @@ import {
   PlusOutlined,
   UserAddOutlined,
 } from "@ant-design/icons-vue";
-import { MdPreview } from "md-editor-v3";
+import MarkdownCollapse from "./MarkdownCollapse.vue";
 import { formatCount } from "../utils/format";
 import { VOTE_STATUS } from "../constants/vote";
 
@@ -167,9 +167,11 @@ const handleToggleTopicFollow = (topic) => {
 
           <h1 class="q-title">{{ question.title }}</h1>
           <div class="q-content">
-            <MdPreview
-              :modelValue="String(question.content || '')"
-              :noHighlight="true"
+            <MarkdownCollapse
+              :content="String(question.content || '')"
+              :collapsedHeight="140"
+              expandText="显示全部"
+              collapseText="收起"
             />
           </div>
 

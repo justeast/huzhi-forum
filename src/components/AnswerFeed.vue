@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
   CommentOutlined,
   DislikeFilled,
@@ -8,8 +8,8 @@ import {
   StarOutlined,
   StarFilled,
 } from "@ant-design/icons-vue";
-import { MdPreview } from "md-editor-v3";
 import AnswerCommentSection from "./AnswerCommentSection.vue";
+import MarkdownCollapse from "./MarkdownCollapse.vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatCount, formatDateTimeMinute } from "../utils/format";
 
@@ -26,6 +26,7 @@ const props = defineProps({
 const emit = defineEmits(["load-more", "vote", "collect"]);
 
 const openCommentAnswerId = ref(null);
+const expandedMap = reactive({});
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -97,6 +98,21 @@ const handleToggleComment = (item) => {
   openCommentAnswerId.value = current === next ? null : item.id;
 };
 
+const handleExpandedChange = (id, value) => {
+  const key = String(id || "");
+  if (!key) return;
+  const next = Boolean(value);
+  if (next) {
+    // 同一时间只展开一个回答，避免多个固定栏叠加
+    Object.keys(expandedMap).forEach((k) => {
+      expandedMap[k] = false;
+    });
+    expandedMap[key] = true;
+    return;
+  }
+  expandedMap[key] = false;
+};
+
 const isCollected = (value) => Boolean(value);
 
 const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
@@ -123,13 +139,79 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
           </div>
 
           <div class="content">
-            <MdPreview
-              :modelValue="String(item?.content || '')"
-              :noHighlight="true"
-            />
+            <MarkdownCollapse
+              :expanded="Boolean(expandedMap[String(item?.id)])"
+              :content="String(item?.content || '')"
+              :collapsedHeight="260"
+              expandText="阅读全文"
+              collapseText="收起"
+              @update:expanded="(v) => handleExpandedChange(item?.id, v)"
+            >
+              <template #actions>
+                <div class="sticky-actions-row">
+                  <button
+                    class="vote-btn"
+                    :class="{ voted: isUpvoted(item?.user_vote_status) }"
+                    type="button"
+                    :disabled="isVoting(item?.id)"
+                    @click="handleUpvote(item)"
+                  >
+                    <LikeFilled />
+                    <span class="action-text">
+                      {{ formatCount(item?.upvote_count || 0) }} 赞同
+                    </span>
+                  </button>
+
+                  <button
+                    class="action-meta link icon-only"
+                    :class="{ downvoted: isDownvoted(item?.user_vote_status) }"
+                    type="button"
+                    :disabled="isVoting(item?.id)"
+                    @click="handleDownvote(item)"
+                  >
+                    <template v-if="isDownvoted(item?.user_vote_status)">
+                      <DislikeFilled />
+                    </template>
+                    <template v-else>
+                      <DislikeOutlined />
+                    </template>
+                  </button>
+
+                  <button
+                    class="action-meta link"
+                    type="button"
+                    :disabled="!item?.id"
+                    @click="handleToggleComment(item)"
+                  >
+                    <CommentOutlined />
+                    <span class="action-text">
+                      {{ Number(item?.comment_count || 0) }} 评论
+                    </span>
+                  </button>
+
+                  <button
+                    class="action-meta link collect-btn"
+                    :class="{ collected: isCollected(item?.is_collected) }"
+                    type="button"
+                    :disabled="isCollecting(item?.id)"
+                    @click="handleCollect(item)"
+                  >
+                    <template v-if="isCollected(item?.is_collected)">
+                      <StarFilled />
+                    </template>
+                    <template v-else>
+                      <StarOutlined />
+                    </template>
+                    <span class="action-text">{{
+                      isCollected(item?.is_collected) ? "已收藏" : "收藏"
+                    }}</span>
+                  </button>
+                </div>
+              </template>
+            </MarkdownCollapse>
           </div>
 
-          <div class="actions">
+          <div v-if="!expandedMap[String(item?.id)]" class="actions">
             <button
               class="vote-btn"
               :class="{ voted: isUpvoted(item?.user_vote_status) }"
@@ -302,6 +384,15 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
   color: #94a3b8;
   font-size: 13px;
   flex-wrap: wrap;
+}
+
+.sticky-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: #94a3b8;
+  font-size: 13px;
 }
 
 .vote-btn {
