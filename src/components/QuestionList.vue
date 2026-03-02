@@ -9,8 +9,9 @@ import {
   StarOutlined,
 } from "@ant-design/icons-vue";
 import AnswerCommentSection from "./AnswerCommentSection.vue";
+import MarkdownCollapse from "./MarkdownCollapse.vue";
 import { VOTE_STATUS } from "../constants/vote";
-import { formatCount, toPreviewText } from "../utils/format";
+import { formatCount } from "../utils/format";
 
 const router = useRouter();
 
@@ -28,6 +29,7 @@ const emit = defineEmits(["load-more", "vote", "collect"]);
 const sentinelRef = ref(null);
 let observer = null;
 const openCommentAnswerId = ref(null);
+const expandedKey = ref("");
 
 const showEmpty = computed(() => !props.loading && props.questions.length === 0);
 
@@ -68,6 +70,26 @@ onBeforeUnmount(() => {
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
 const isVoting = (answerId) => Boolean(props.voteLoadingMap?.[answerId]);
 const isCollected = (value) => Boolean(value);
+
+const getExpandKey = (item) => {
+  const ansId = item?.top_answer?.id;
+  if (ansId) return `a:${String(ansId)}`;
+  const qid = item?.id;
+  return qid ? `q:${String(qid)}` : "";
+};
+
+const isExpanded = (item) => expandedKey.value === getExpandKey(item);
+
+const handleExpandedChange = (item, value) => {
+  const key = getExpandKey(item);
+  if (!key) return;
+  const next = Boolean(value);
+  if (next) {
+    expandedKey.value = key;
+    return;
+  }
+  if (expandedKey.value === key) expandedKey.value = "";
+};
 
 const handleClickItem = (item) => {
   const id = item?.id;
@@ -125,19 +147,81 @@ const handleToggleComment = (item) => {
         >
           <h2 class="title">{{ item.title }}</h2>
 
-          <p class="answer-preview">
+          <div class="answer-preview">
             <template v-if="item.top_answer">
-              <span class="answerer">
+              <div class="answerer">
                 {{ item.top_answer.respondent?.username || "匿名用户" }}：
-              </span>
-              {{ toPreviewText(item.top_answer.content, 260) }}
-            </template>
-            <template v-else>
-              {{ toPreviewText(item.content, 260) }}
-            </template>
-          </p>
+              </div>
+              <MarkdownCollapse
+                :expanded="isExpanded(item)"
+                :content="String(item.top_answer?.content || '')"
+                :collapsedHeight="84"
+                expandText="阅读全文"
+                collapseText="收起"
+                @update:expanded="(v) => handleExpandedChange(item, v)"
+              >
+                <template #actions>
+                  <div class="sticky-actions-row">
+                    <button
+                      class="vote-btn"
+                      :class="{ voted: isUpvoted(item.top_answer?.user_vote_status) }"
+                      type="button"
+                      :disabled="!item.top_answer?.id || isVoting(item.top_answer?.id)"
+                      @click.stop="handleVote(item)"
+                    >
+                      <LikeFilled />
+                      <span class="action-text">
+                        {{ formatCount(item.top_answer?.upvote_count || 0) }} 赞同
+                      </span>
+                    </button>
 
-          <div class="actions">
+                    <button
+                      class="action-meta link"
+                      type="button"
+                      :disabled="!item.top_answer?.id"
+                      @click.stop="handleToggleComment(item)"
+                    >
+                      <CommentOutlined />
+                      <span class="action-text">
+                        {{ item.top_answer?.comment_count || 0 }} 条评论
+                      </span>
+                    </button>
+
+                    <button
+                      class="action-meta link"
+                      :class="{ collected: isCollected(item.top_answer?.is_collected) }"
+                      type="button"
+                      :disabled="!item.top_answer?.id"
+                      @click.stop="handleCollectAnswer(item)"
+                    >
+                      <template v-if="isCollected(item.top_answer?.is_collected)">
+                        <StarFilled />
+                      </template>
+                      <template v-else>
+                        <StarOutlined />
+                      </template>
+                      <span class="action-text">{{
+                        isCollected(item.top_answer?.is_collected) ? "已收藏" : "收藏"
+                      }}</span>
+                    </button>
+                  </div>
+                </template>
+              </MarkdownCollapse>
+            </template>
+
+            <template v-else>
+              <MarkdownCollapse
+                :expanded="isExpanded(item)"
+                :content="String(item.content || '')"
+                :collapsedHeight="84"
+                expandText="显示全部"
+                collapseText="收起"
+                @update:expanded="(v) => handleExpandedChange(item, v)"
+              />
+            </template>
+          </div>
+
+          <div v-if="!item.top_answer || !isExpanded(item)" class="actions">
             <button
               class="vote-btn"
               :class="{ voted: isUpvoted(item.top_answer?.user_vote_status) }"
@@ -253,11 +337,25 @@ const handleToggleComment = (item) => {
   color: #334155;
   line-height: 1.75;
   font-size: 14px;
-  display: -webkit-box;
-  line-clamp: 3;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.answerer {
+  font-weight: 900;
+  color: #111827;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.sticky-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: #94a3b8;
+  font-size: 13px;
 }
 
 .answerer {

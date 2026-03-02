@@ -2,8 +2,9 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { CommentOutlined, LikeFilled } from "@ant-design/icons-vue";
 import AnswerCommentSection from "./AnswerCommentSection.vue";
+import MarkdownCollapse from "./MarkdownCollapse.vue";
 import { VOTE_STATUS } from "../constants/vote";
-import { formatDateTimeMinute, toPreviewText } from "../utils/format";
+import { formatDateTimeMinute, formatCount } from "../utils/format";
 
 const props = defineProps({
   answers: { type: Array, default: () => [] },
@@ -19,6 +20,7 @@ const emit = defineEmits(["load-more", "item-click", "vote"]);
 const sentinelRef = ref(null);
 let observer = null;
 const openCommentAnswerId = ref(null);
+const expandedAnswerId = ref("");
 
 const showEmpty = computed(() => !props.loading && props.answers.length === 0);
 
@@ -59,6 +61,13 @@ onBeforeUnmount(() => {
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
 const isVoting = (id) => Boolean(props.voteLoadingMap?.[id]);
 
+const getExpandKey = (item) => {
+  const id = item?.id;
+  return id ? String(id) : "";
+};
+
+const isExpanded = (item) => expandedAnswerId.value === getExpandKey(item);
+
 const handleClickItem = (item) => {
   emit("item-click", item);
 };
@@ -76,6 +85,18 @@ const handleToggleComment = (item) => {
   const current = String(openCommentAnswerId.value || "");
   const next = String(id || "");
   openCommentAnswerId.value = current === next ? null : id;
+};
+
+const handleExpandedChange = (item, value) => {
+  const key = getExpandKey(item);
+  if (!key) return;
+  const next = Boolean(value);
+  if (next) {
+    // 同一时间只展开一个回答，避免多个固定栏叠加
+    expandedAnswerId.value = key;
+    return;
+  }
+  if (expandedAnswerId.value === key) expandedAnswerId.value = "";
 };
 </script>
 
@@ -95,11 +116,47 @@ const handleToggleComment = (item) => {
         >
           <div class="title">{{ item?.question?.title }}</div>
 
-          <div class="preview">
-            {{ toPreviewText(item?.content, 260) }}
+          <div class="content">
+            <MarkdownCollapse
+              :expanded="isExpanded(item)"
+              :content="String(item?.content || '')"
+              :collapsedHeight="84"
+              expandText="阅读全文"
+              collapseText="收起"
+              @update:expanded="(v) => handleExpandedChange(item, v)"
+            >
+              <template #actions>
+                <div class="sticky-actions-row">
+                  <button
+                    class="vote-btn"
+                    :class="{ voted: isUpvoted(item?.user_vote_status) }"
+                    type="button"
+                    :disabled="isVoting(item?.id)"
+                    @click.stop="handleVote(item)"
+                  >
+                    <LikeFilled />
+                    <span class="action-text">
+                      {{ formatCount(item?.upvote_count || 0) }} 赞同
+                    </span>
+                  </button>
+
+                  <button
+                    class="action-meta link"
+                    type="button"
+                    :disabled="!item?.id"
+                    @click.stop="handleToggleComment(item)"
+                  >
+                    <CommentOutlined />
+                    <span class="action-text">
+                      {{ Number(item?.comment_count || 0) }} 评论
+                    </span>
+                  </button>
+                </div>
+              </template>
+            </MarkdownCollapse>
           </div>
 
-          <div class="bottom">
+          <div v-if="!isExpanded(item)" class="bottom">
             <div class="actions">
               <button
                 class="vote-btn"
@@ -109,7 +166,9 @@ const handleToggleComment = (item) => {
                 @click.stop="handleVote(item)"
               >
                 <LikeFilled />
-                <span class="action-text">{{ Number(item?.upvote_count || 0) }} 赞同</span>
+                <span class="action-text">
+                  {{ formatCount(item?.upvote_count || 0) }} 赞同
+                </span>
               </button>
 
               <button
@@ -196,16 +255,11 @@ const handleToggleComment = (item) => {
   color: var(--brand-color);
 }
 
-.preview {
+.content {
   margin: 0;
   color: #334155;
   line-height: 1.75;
   font-size: 14px;
-  display: -webkit-box;
-  line-clamp: 3;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 .bottom {
@@ -220,6 +274,15 @@ const handleToggleComment = (item) => {
   display: flex;
   align-items: center;
   gap: 18px;
+  color: #94a3b8;
+  font-size: 13px;
+}
+
+.sticky-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  flex-wrap: wrap;
   color: #94a3b8;
   font-size: 13px;
 }

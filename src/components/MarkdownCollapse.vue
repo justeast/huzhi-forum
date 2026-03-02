@@ -236,6 +236,7 @@ onBeforeUnmount(() => {
       v-if="shouldShowToggle && !isExpanded"
       class="toggle-row"
       :class="{ over: isCollapsed }"
+      @click.stop
     >
       <div v-if="isCollapsed" class="mask" aria-hidden="true"></div>
 
@@ -243,7 +244,7 @@ onBeforeUnmount(() => {
         [图片<span v-if="imageCount > 1">×{{ imageCount }}</span>]
       </span>
 
-      <button class="toggle-btn" type="button" @click="toggle">
+      <button class="toggle-btn" type="button" @click.stop="toggle">
         <span>{{ isExpanded ? collapseText : expandText }}</span>
         <UpOutlined v-if="isExpanded" class="icon" />
         <DownOutlined v-else class="icon" />
@@ -251,12 +252,12 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- 已读到末尾：显示“就地的操作+收起”，避免固定栏在底部造成混淆 -->
-    <div v-if="showEndBar" class="end-bar">
+    <div v-if="showEndBar" class="end-bar" @click.stop>
       <div class="end-actions">
         <slot name="actions" />
       </div>
 
-      <button class="end-collapse" type="button" @click="toggle">
+      <button class="end-collapse" type="button" @click.stop="toggle">
         <span>{{ collapseText }}</span>
         <UpOutlined class="icon" />
       </button>
@@ -267,12 +268,13 @@ onBeforeUnmount(() => {
       v-if="showFixedBar"
       class="sticky-bar show"
       :style="stickyBarStyle"
+      @click.stop
     >
       <div class="sticky-actions">
         <slot name="actions" />
       </div>
 
-      <button class="sticky-collapse" type="button" @click="toggle">
+      <button class="sticky-collapse" type="button" @click.stop="toggle">
         <span>{{ collapseText }}</span>
         <UpOutlined class="icon" />
       </button>
@@ -283,6 +285,36 @@ onBeforeUnmount(() => {
 <style scoped>
 .md-collapse {
   position: relative;
+}
+
+.md-collapse :deep(.md-editor-preview-wrapper) {
+  padding: 0;
+  background: transparent;
+}
+
+.md-collapse :deep(.md-editor-preview) {
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.md-collapse :deep(p) {
+  margin: 0 0 8px;
+}
+
+.md-collapse :deep(ul),
+.md-collapse :deep(ol) {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.md-collapse :deep(img) {
+  max-width: 100%;
+  height: auto;
+}
+
+.md-collapse :deep(a) {
+  color: var(--brand-color);
 }
 
 .md-collapse.has-fixed .md-body {
