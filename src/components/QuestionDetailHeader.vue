@@ -6,6 +6,7 @@ import {
   PlusOutlined,
   UserAddOutlined,
 } from "@ant-design/icons-vue";
+import { MdPreview } from "md-editor-v3";
 import { formatCount } from "../utils/format";
 import { VOTE_STATUS } from "../constants/vote";
 
@@ -165,7 +166,12 @@ const handleToggleTopicFollow = (topic) => {
           </div>
 
           <h1 class="q-title">{{ question.title }}</h1>
-          <div class="q-content">{{ question.content }}</div>
+          <div class="q-content">
+            <MdPreview
+              :modelValue="String(question.content || '')"
+              :noHighlight="true"
+            />
+          </div>
 
           <div class="q-actions">
             <button class="btn primary" type="button" @click="handleWriteAnswer">
@@ -230,6 +236,23 @@ const handleToggleTopicFollow = (topic) => {
 .q-main {
   padding: 18px 18px 16px;
   min-width: 0;
+}
+
+.q-content :deep(.md-editor-preview-wrapper) {
+  padding: 0;
+  background: transparent;
+  font-size: 15px;
+  line-height: 1.85;
+  color: #334155;
+}
+
+.q-content :deep(p) {
+  margin: 0 0 10px;
+}
+
+.q-content :deep(img) {
+  max-width: 100%;
+  height: auto;
 }
 
 .topic-row {
@@ -406,7 +429,6 @@ const handleToggleTopicFollow = (topic) => {
   color: #334155;
   line-height: 1.9;
   font-size: 14px;
-  white-space: pre-wrap;
 }
 
 .q-actions {

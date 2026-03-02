@@ -8,6 +8,7 @@ import {
   StarOutlined,
   StarFilled,
 } from "@ant-design/icons-vue";
+import { MdPreview } from "md-editor-v3";
 import AnswerCommentSection from "./AnswerCommentSection.vue";
 import { VOTE_STATUS } from "../constants/vote";
 import { formatCount, formatDateTimeMinute } from "../utils/format";
@@ -122,7 +123,10 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
           </div>
 
           <div class="content">
-            {{ item?.content }}
+            <MdPreview
+              :modelValue="String(item?.content || '')"
+              :noHighlight="true"
+            />
           </div>
 
           <div class="actions">
@@ -273,8 +277,21 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
   color: #334155;
   line-height: 1.85;
   font-size: 14px;
-  white-space: pre-wrap;
   word-break: break-word;
+}
+
+.content :deep(.md-editor-preview-wrapper) {
+  padding: 0;
+  background: transparent;
+}
+
+.content :deep(p) {
+  margin: 0 0 8px;
+}
+
+.content :deep(img) {
+  max-width: 100%;
+  height: auto;
 }
 
 .actions {
