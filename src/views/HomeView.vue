@@ -240,6 +240,8 @@ const fetchQuestions = async ({ reset } = { reset: false }) => {
       page,
       size: QA_PAGE_SIZE,
       search: qaKeyword.value || undefined,
+      // 首页问答：后端通过 scene=home 启用推荐过滤规则（如排除自己提问、按热度与相关性）
+      scene: "home",
     });
     const results = data?.results || [];
     list.value = mergeById(list.value, results);
