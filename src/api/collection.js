@@ -135,3 +135,28 @@ export const deleteCollectionFolder = async (collectionId) => {
     throw new Error(res?.data?.msg || "删除收藏夹失败");
   }
 };
+
+// 获取收藏夹内回答列表（GET /collection/{collection_id}/answers/）
+// 支持分页：page、size；也支持直接传入 nextUrl（完整 URL）
+export const fetchCollectionAnswerPage = async (
+  collectionId,
+  paramsOrUrl = {},
+) => {
+  if (!collectionId) throw new Error("收藏夹 id 不能为空");
+
+  const res =
+    typeof paramsOrUrl === "string"
+      ? await http.get(paramsOrUrl)
+      : await http.get(`/collection/${collectionId}/answers/`, {
+          params: {
+            page: paramsOrUrl.page || 1,
+            size: paramsOrUrl.size || 10,
+          },
+        });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取收藏夹内容失败");
+  }
+
+  return res.data.data;
+};

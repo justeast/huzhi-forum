@@ -16,6 +16,7 @@ import FollowQuestionList from "../components/FollowQuestionList.vue";
 import UserAnswerList from "../components/UserAnswerList.vue";
 import UserQuestionList from "../components/UserQuestionList.vue";
 import ProfileFollowUsersPanel from "../components/ProfileFollowUsersPanel.vue";
+import CollectionAnswerDrawer from "../components/CollectionAnswerDrawer.vue";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
 import { useExpandTransition } from "../composables/useExpandTransition";
@@ -71,6 +72,10 @@ const collectionError = ref("");
 // 收藏夹数量：加载完成前为 null（未知），Tab 数量位置显示骨架占位
 const collectionCount = ref(null);
 const collectionList = ref([]);
+
+// 收藏夹详情：抽屉展示收藏夹内回答列表
+const collectionDetailOpen = ref(false);
+const activeCollection = ref(null);
 
 const createCollectionOpen = ref(false);
 const createCollectionLoading = ref(false);
@@ -724,7 +729,21 @@ const handleConfirmDeleteCollection = async (item) => {
 const handleClickCollection = (item) => {
   if (!item?.id) return;
   if (deletingCollectionId.value) return;
-  message.info("收藏夹详情功能开发中");
+  activeCollection.value = item;
+  collectionDetailOpen.value = true;
+};
+
+const handleCollectionDetailCountChange = (nextCount) => {
+  const id = activeCollection.value?.id;
+  if (!id) return;
+  const num = Math.max(0, Number(nextCount || 0));
+
+  // activeCollection 通常就是 collectionList 内的引用对象，直接赋值即可同步卡片数量
+  if (activeCollection.value) activeCollection.value.answer_count = num;
+
+  // 兜底：若引用不一致，按 id 同步一次
+  const hit = (collectionList.value || []).find((x) => x?.id === id);
+  if (hit) hit.answer_count = num;
 };
 
 const handleRetryCollections = () => {
@@ -1473,6 +1492,12 @@ onMounted(() => {
         </section>
       </Transition>
     </div>
+
+    <CollectionAnswerDrawer
+      v-model:open="collectionDetailOpen"
+      :collection="activeCollection"
+      @count-change="handleCollectionDetailCountChange"
+    />
 
     <a-modal
       v-model:open="createCollectionOpen"
