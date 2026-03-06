@@ -1,14 +1,18 @@
 import { http } from "./http";
 
 // 获取问题列表（GET /question/）
-// params: { page?: number, size?: number, search?: string, scene?: string }
+// params: { page?: number, size?: number, search?: string, scene?: string, topics?: string|string[] }
 export const fetchQuestionList = async (params = {}) => {
+  const topics =
+    Array.isArray(params?.topics) ? params.topics.filter(Boolean).join(",") : params?.topics;
+
   const res = await http.get("/question/", {
     params: {
       page: params.page || 1,
       size: params.size || 10,
       search: params.search || undefined,
       scene: params.scene || undefined,
+      topics: topics || undefined,
     },
   });
 

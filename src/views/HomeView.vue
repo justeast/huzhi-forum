@@ -79,6 +79,13 @@ const isFollowActive = computed(
     activeNav.value === HOME_NAV.FOLLOW_TOPICS,
 );
 
+const headerSearchPlaceholder = computed(() => {
+  if (activeNav.value === HOME_NAV.FOLLOW_QUESTIONS) return "搜索你关注的问题...";
+  if (activeNav.value === HOME_NAV.FOLLOW_TOPICS) return "搜索你关注的话题...";
+  if (activeNav.value === HOME_NAV.TOPICS) return "搜索你感兴趣的话题...";
+  return "搜索你感兴趣的内容...";
+});
+
 const followLabel = computed(() => {
   if (!isFollowActive.value) return "关注";
   return HOME_FOLLOW_LABEL_MAP[activeNav.value] || "关注";
@@ -143,6 +150,12 @@ const handleSelectNav = (key) => {
   }
 
   message.info("该模块开发中");
+};
+
+const handleClickTopicItem = (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  router.push(`/topic/${id}`);
 };
 
 const setMapFlag = (mapRef, key, value) => {
@@ -576,7 +589,11 @@ onMounted(() => {
 
 <template>
   <div class="home-page">
-    <AppHeader v-model="headerKeyword" @search="handleHeaderSearch" />
+    <AppHeader
+      v-model="headerKeyword"
+      :searchPlaceholder="headerSearchPlaceholder"
+      @search="handleHeaderSearch"
+    />
 
     <div class="container">
       <main class="main">
@@ -657,6 +674,7 @@ onMounted(() => {
               :followLoadingMap="topicFollowLoadingMap"
               @load-more="handleLoadMoreTopics"
               @toggle-follow="handleToggleTopicFollow"
+              @item-click="handleClickTopicItem"
             />
           </template>
 
@@ -671,6 +689,7 @@ onMounted(() => {
               emptyText="暂无关注的话题"
               @load-more="handleLoadMoreFollowTopics"
               @toggle-follow="handleToggleFollowTopicInFollowTab"
+              @item-click="handleClickTopicItem"
             />
           </template>
 

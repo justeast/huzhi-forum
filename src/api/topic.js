@@ -76,3 +76,16 @@ export const createTopic = async (payload = {}) => {
 
   return res.data.data;
 };
+
+// 获取话题详情（GET /topic/{topic_id}/）
+export const fetchTopicDetail = async (topicId) => {
+  if (!topicId) throw new Error("缺少话题ID");
+
+  const res = await http.get(`/topic/${topicId}/`);
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "获取话题详情失败");
+  }
+
+  return res.data.data;
+};

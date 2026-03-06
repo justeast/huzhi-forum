@@ -11,9 +11,11 @@ const props = defineProps({
   followLoadingMap: { type: Object, default: () => ({}) },
   // 取消关注后的表现：toggle=仅切换按钮；remove=父组件移除后可配合 TransitionGroup 做擦除动画
   unfollowBehavior: { type: String, default: "toggle" },
+  // 话题卡片是否可点击进入详情
+  clickable: { type: Boolean, default: true },
 });
 
-const emit = defineEmits(["load-more", "toggle-follow"]);
+const emit = defineEmits(["load-more", "toggle-follow", "item-click"]);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -66,6 +68,12 @@ const handleIconError = (event) => {
 const handleToggleFollow = (topic) => {
   emit("toggle-follow", topic);
 };
+
+const handleClickItem = (topic) => {
+  if (!props.clickable) return;
+  if (!topic?.id) return;
+  emit("item-click", topic);
+};
 </script>
 
 <template>
@@ -79,7 +87,17 @@ const handleToggleFollow = (topic) => {
         name="topic"
         :data-unfollow="unfollowBehavior"
       >
-        <div v-for="topic in topics" :key="topic.id" class="card">
+        <div
+          v-for="topic in topics"
+          :key="topic.id"
+          class="card"
+          :class="{ clickable: clickable }"
+          :role="clickable ? 'button' : undefined"
+          :tabindex="clickable ? 0 : undefined"
+          @click="handleClickItem(topic)"
+          @keydown.enter.prevent="handleClickItem(topic)"
+          @keydown.space.prevent="handleClickItem(topic)"
+        >
           <div class="card-main">
             <div class="icon-wrap">
               <img
@@ -100,7 +118,7 @@ const handleToggleFollow = (topic) => {
               :class="{ following: Boolean(topic?.is_following) }"
               type="button"
               :disabled="Boolean(followLoadingMap?.[topic?.id])"
-              @click="handleToggleFollow(topic)"
+              @click.stop="handleToggleFollow(topic)"
             >
               <template v-if="followLoadingMap?.[topic?.id]">处理中</template>
               <template v-else-if="topic?.is_following">
@@ -158,6 +176,10 @@ const handleToggleFollow = (topic) => {
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
   transition: transform 0.18s ease, box-shadow 0.18s ease,
     border-color 0.18s ease;
+}
+
+.card.clickable {
+  cursor: pointer;
 }
 
 .card:hover {

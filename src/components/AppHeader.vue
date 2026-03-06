@@ -15,6 +15,7 @@ import AskQuestionModal from "./AskQuestionModal.vue";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
+  searchPlaceholder: { type: String, default: "搜索你感兴趣的内容..." },
 });
 
 const emit = defineEmits(["update:modelValue", "search"]);
@@ -76,7 +77,7 @@ const handleLogout = () => {
           class="search"
           size="large"
           allow-clear
-          placeholder="搜索你感兴趣的内容..."
+          :placeholder="props.searchPlaceholder"
           @pressEnter="handleSearch"
         >
           <template #suffix>

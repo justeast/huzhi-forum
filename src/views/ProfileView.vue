@@ -445,6 +445,12 @@ const handleClickFollowQuestion = (item) => {
   router.push(`/question/${id}`);
 };
 
+const handleClickTopicItem = (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  router.push(`/topic/${id}`);
+};
+
 const handleClickAnswerItem = (item) => {
   const questionId = item?.question?.id;
   if (!questionId) return;
@@ -1340,6 +1346,7 @@ onMounted(() => {
                     emptyText="暂无关注的话题"
                     @load-more="handleLoadMoreFollowTopics"
                     @toggle-follow="handleToggleFollowTopic"
+                    @item-click="handleClickTopicItem"
                   />
                 </template>
 

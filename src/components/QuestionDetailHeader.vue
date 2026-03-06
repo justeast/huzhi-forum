@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref } from "vue";
 import { message } from "ant-design-vue";
+import { useRouter } from "vue-router";
 import {
   LikeFilled,
   PlusOutlined,
@@ -25,6 +26,8 @@ const emit = defineEmits([
   "toggle-topic-follow",
   "write-answer",
 ]);
+
+const router = useRouter();
 
 const activeTopicId = ref(null);
 let closeTimer = null;
@@ -92,6 +95,12 @@ const handleToggleTopicFollow = (topic) => {
   if (isTopicFollowLoading(id)) return;
   emit("toggle-topic-follow", topic);
 };
+
+const handleClickTopic = (topic) => {
+  const id = topic?.id;
+  if (!id) return;
+  router.push(`/topic/${id}`);
+};
 </script>
 
 <template>
@@ -107,7 +116,16 @@ const handleToggleTopicFollow = (topic) => {
               @mouseenter="handleTopicEnter(t.id)"
               @mouseleave="handleTopicLeave(t.id)"
             >
-              <span class="topic-chip">{{ t.name }}</span>
+              <span
+                class="topic-chip"
+                role="button"
+                tabindex="0"
+                @click="handleClickTopic(t)"
+                @keydown.enter.prevent="handleClickTopic(t)"
+                @keydown.space.prevent="handleClickTopic(t)"
+              >
+                {{ t.name }}
+              </span>
 
               <div
                 class="topic-pop"
@@ -280,7 +298,7 @@ const handleToggleTopicFollow = (topic) => {
   color: var(--brand-color);
   font-weight: 900;
   font-size: 12px;
-  cursor: default;
+  cursor: pointer;
 }
 
 .topic-pop {
