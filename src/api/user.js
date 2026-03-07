@@ -113,3 +113,22 @@ export const fetchUserCard = async (userId) => {
   return res.data.data;
 };
 
+// 用户修改密码（POST /user/pwd-change/）
+// payload: { old_password: string, new_password: string }
+export const changePassword = async (payload = {}) => {
+  const oldPwd = String(payload?.old_password || "").trim();
+  const newPwd = String(payload?.new_password || "").trim();
+  if (!oldPwd) throw new Error("请输入旧密码");
+  if (!newPwd) throw new Error("请输入新密码");
+
+  const res = await http.post("/user/pwd-change/", {
+    old_password: oldPwd,
+    new_password: newPwd,
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "密码修改失败");
+  }
+
+  return res.data.data;
+};

@@ -5,6 +5,7 @@ import { message } from "ant-design-vue";
 import {
   HomeOutlined,
   LogoutOutlined,
+  LockOutlined,
   MessageOutlined,
   SearchOutlined,
   PlusOutlined,
@@ -14,6 +15,7 @@ import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
 import { storeToRefs } from "pinia";
 import AskQuestionModal from "./AskQuestionModal.vue";
+import ChangePasswordModal from "./ChangePasswordModal.vue";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
@@ -28,6 +30,7 @@ const chatStore = useChatStore();
 const { totalUnread } = storeToRefs(chatStore);
 
 const askModalOpen = ref(false);
+const changePwdOpen = ref(false);
 
 const keyword = computed({
   get: () => props.modelValue,
@@ -65,6 +68,10 @@ const handleLogout = () => {
   authStore.logout();
   router.push("/auth");
   message.success("已退出登录");
+};
+
+const handleOpenChangePassword = () => {
+  changePwdOpen.value = true;
 };
 
 const handleOpenChatDrawer = () => {
@@ -147,6 +154,10 @@ const handleOpenChatDrawer = () => {
                 <HomeOutlined />
                 <span class="menu-text">我的主页</span>
               </a-menu-item>
+              <a-menu-item key="change-pwd" @click="handleOpenChangePassword">
+                <LockOutlined />
+                <span class="menu-text">修改密码</span>
+              </a-menu-item>
               <a-menu-item key="logout" @click="handleLogout">
                 <LogoutOutlined />
                 <span class="menu-text">退出</span>
@@ -159,6 +170,7 @@ const handleOpenChatDrawer = () => {
   </header>
 
   <AskQuestionModal v-model:open="askModalOpen" />
+  <ChangePasswordModal v-model:open="changePwdOpen" />
 </template>
 
 <style scoped>

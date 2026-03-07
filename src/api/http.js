@@ -76,6 +76,15 @@ http.interceptors.response.use(
       }
     }
 
+    // 统一错误提示：后端若返回 msg，则优先作为错误信息，避免前端出现 "Request failed with status code xxx"
+    // 注意：401 已由上方统一处理并提示，这里避免覆盖其 message，减少重复提示的可能
+    if (status && status !== 401) {
+      const apiMsg = error?.response?.data?.msg;
+      if (typeof apiMsg === "string" && apiMsg.trim()) {
+        error.message = apiMsg;
+      }
+    }
+
     return Promise.reject(error);
   },
 );
