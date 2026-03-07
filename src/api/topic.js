@@ -26,6 +26,7 @@ export const fetchFollowingTopics = async (params = {}) => {
       page: params.page || 1,
       size: params.size || 20,
       search: params.search || undefined,
+      user_id: params.user_id || undefined,
     },
   });
 

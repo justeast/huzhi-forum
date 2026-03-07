@@ -1,14 +1,16 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { message } from "ant-design-vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import {
   CameraOutlined,
   DeleteOutlined,
   EditOutlined,
   LockOutlined,
+  MessageOutlined,
   PlusOutlined,
   RightOutlined,
+  UserAddOutlined,
 } from "@ant-design/icons-vue";
 import AppHeader from "../components/AppHeader.vue";
 import TopicList from "../components/TopicList.vue";
@@ -16,14 +18,19 @@ import FollowQuestionList from "../components/FollowQuestionList.vue";
 import UserAnswerList from "../components/UserAnswerList.vue";
 import UserQuestionList from "../components/UserQuestionList.vue";
 import ProfileFollowUsersPanel from "../components/ProfileFollowUsersPanel.vue";
+import UserFollowList from "../components/UserFollowList.vue";
 import CollectionAnswerDrawer from "../components/CollectionAnswerDrawer.vue";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
 import { useExpandTransition } from "../composables/useExpandTransition";
 import {
+  fetchOtherUserProfile,
+  fetchFollowingUsers,
   fetchUserAchievements,
+  fetchUserCard,
   fetchUserProfile,
   patchUserProfile,
+  toggleUserFollow,
 } from "../api/user";
 import { fetchUserAnswerList, voteAnswer } from "../api/answer";
 import { fetchFollowingQuestionList, fetchUserQuestionList } from "../api/question";
@@ -45,8 +52,32 @@ import {
 } from "../constants/profileNav";
 
 const router = useRouter();
+const route = useRoute();
 const authStore = useAuthStore();
 const topicFollowStore = useTopicFollowStore();
+
+const selfUserId = computed(() => String(authStore.userId || "").trim());
+const routeUserId = computed(() => String(route.params?.id || "").trim());
+// /profile 为本人主页；/user/:id 为他人主页（当 id === self 时重定向回 /profile）
+const isOtherProfile = computed(
+  () => Boolean(routeUserId.value) && routeUserId.value !== selfUserId.value,
+);
+const canEditProfile = computed(() => !isOtherProfile.value);
+const targetUserId = computed(() =>
+  isOtherProfile.value ? routeUserId.value : selfUserId.value,
+);
+
+watch(
+  [routeUserId, selfUserId],
+  () => {
+    // 访问 /user/{自己} 时，统一跳回 /profile，避免两套地址造成体验割裂
+    if (!routeUserId.value) return;
+    if (!selfUserId.value) return;
+    if (routeUserId.value !== selfUserId.value) return;
+    router.replace("/profile");
+  },
+  { immediate: true },
+);
 
 const headerKeyword = ref("");
 const handleHeaderSearch = () => {
@@ -66,6 +97,11 @@ const achievements = ref({
   answer_count: 0,
   follower_count: 0,
 });
+
+// 他人主页：关注状态仅取 /card/ 的 is_following / is_mutual
+const cardLoading = ref(false);
+const card = ref(null);
+const followLoading = ref(false);
 
 const collectionLoading = ref(false);
 const collectionError = ref("");
@@ -118,8 +154,8 @@ const activeFollowTab = ref(PROFILE_FOLLOW_TAB.QUESTIONS);
 const ANSWER_PAGE_SIZE = 10;
 const answerCount = ref(null);
 const answerList = ref([]);
-const answerPage = ref(1);
-const answerHasMore = ref(true);
+const answerPage = ref(0);
+const answerHasMore = ref(false);
 const answerLoading = ref(false);
 const answerLoadingMore = ref(false);
 const answerVoteLoadingMap = ref({});
@@ -128,27 +164,36 @@ const answerVoteLoadingMap = ref({});
 const QUESTION_PAGE_SIZE = 10;
 const userQuestionCount = ref(null);
 const userQuestionList = ref([]);
-const userQuestionPage = ref(1);
-const userQuestionHasMore = ref(true);
+const userQuestionPage = ref(0);
+const userQuestionHasMore = ref(false);
 const userQuestionLoading = ref(false);
 const userQuestionLoadingMore = ref(false);
 
 // 关注-问题：仅展示标题 + 回答数，支持无限滚动加载更多
 const FOLLOW_QUESTION_PAGE_SIZE = 10;
 const followQuestionList = ref([]);
-const followQuestionPage = ref(1);
-const followQuestionHasMore = ref(true);
+const followQuestionPage = ref(0);
+const followQuestionHasMore = ref(false);
 const followQuestionLoading = ref(false);
 const followQuestionLoadingMore = ref(false);
 
 // 关注-话题：复用 TopicList，支持取消关注并从列表移除
 const FOLLOW_TOPIC_PAGE_SIZE = 20;
 const followTopicList = ref([]);
-const followTopicPage = ref(1);
-const followTopicHasMore = ref(true);
+const followTopicPage = ref(0);
+const followTopicHasMore = ref(false);
 const followTopicLoading = ref(false);
 const followTopicLoadingMore = ref(false);
 const followTopicFollowLoadingMap = ref({});
+
+// 关注-用户：他人主页仅展示“Ta关注的人”（不展示“关注Ta的人”）
+const FOLLOW_USER_PAGE_SIZE = 20;
+const followUserList = ref([]);
+const followUserPage = ref(0);
+const followUserHasMore = ref(false);
+const followUserLoading = ref(false);
+const followUserLoadingMore = ref(false);
+const followUserActionLoadingMap = ref({});
 
 const mergeById = (items, incoming) => {
   const map = new Map((items || []).map((t) => [t?.id, t]));
@@ -168,8 +213,9 @@ const fetchUserAnswers = async ({ reset } = { reset: false }) => {
   if (!reset && !answerHasMore.value) return;
 
   if (reset) {
-    answerPage.value = 1;
-    answerHasMore.value = true;
+    answerPage.value = 0;
+    // 首次拉取前 unknown，避免组件的 IntersectionObserver 过早触发 load-more
+    answerHasMore.value = false;
     answerList.value = [];
     answerLoading.value = true;
   } else {
@@ -179,7 +225,11 @@ const fetchUserAnswers = async ({ reset } = { reset: false }) => {
   const page = reset ? 1 : answerPage.value + 1;
 
   try {
-    const data = await fetchUserAnswerList({ page, size: ANSWER_PAGE_SIZE });
+    const data = await fetchUserAnswerList({
+      page,
+      size: ANSWER_PAGE_SIZE,
+      user_id: isOtherProfile.value ? targetUserId.value : undefined,
+    });
     if (answerCount.value === null) {
       answerCount.value = Math.max(0, Number(data?.count || 0));
     }
@@ -211,8 +261,9 @@ const fetchUserQuestions = async ({ reset } = { reset: false }) => {
   if (!reset && !userQuestionHasMore.value) return;
 
   if (reset) {
-    userQuestionPage.value = 1;
-    userQuestionHasMore.value = true;
+    userQuestionPage.value = 0;
+    // 首次拉取前 unknown，避免组件的 IntersectionObserver 过早触发 load-more
+    userQuestionHasMore.value = false;
     userQuestionList.value = [];
     userQuestionLoading.value = true;
   } else {
@@ -222,7 +273,11 @@ const fetchUserQuestions = async ({ reset } = { reset: false }) => {
   const page = reset ? 1 : userQuestionPage.value + 1;
 
   try {
-    const data = await fetchUserQuestionList({ page, size: QUESTION_PAGE_SIZE });
+    const data = await fetchUserQuestionList({
+      page,
+      size: QUESTION_PAGE_SIZE,
+      user_id: isOtherProfile.value ? targetUserId.value : undefined,
+    });
     if (userQuestionCount.value === null) {
       userQuestionCount.value = Math.max(0, Number(data?.count || 0));
     }
@@ -254,8 +309,9 @@ const fetchFollowQuestions = async ({ reset } = { reset: false }) => {
   if (!reset && !followQuestionHasMore.value) return;
 
   if (reset) {
-    followQuestionPage.value = 1;
-    followQuestionHasMore.value = true;
+    followQuestionPage.value = 0;
+    // 首次拉取前 unknown，避免组件的 IntersectionObserver 过早触发 load-more
+    followQuestionHasMore.value = false;
     followQuestionList.value = [];
     followQuestionLoading.value = true;
   } else {
@@ -268,6 +324,7 @@ const fetchFollowQuestions = async ({ reset } = { reset: false }) => {
     const data = await fetchFollowingQuestionList({
       page,
       size: FOLLOW_QUESTION_PAGE_SIZE,
+      user_id: isOtherProfile.value ? targetUserId.value : undefined,
     });
     const results = data?.results || [];
     followQuestionList.value = mergeById(followQuestionList.value, results);
@@ -298,8 +355,9 @@ const fetchFollowTopics = async ({ reset } = { reset: false }) => {
   if (!reset && !followTopicHasMore.value) return;
 
   if (reset) {
-    followTopicPage.value = 1;
-    followTopicHasMore.value = true;
+    followTopicPage.value = 0;
+    // 首次拉取前 unknown，避免组件的 IntersectionObserver 过早触发 load-more
+    followTopicHasMore.value = false;
     followTopicList.value = [];
     followTopicLoading.value = true;
   } else {
@@ -312,12 +370,15 @@ const fetchFollowTopics = async ({ reset } = { reset: false }) => {
     const data = await fetchFollowingTopics({
       page,
       size: FOLLOW_TOPIC_PAGE_SIZE,
+      user_id: isOtherProfile.value ? targetUserId.value : undefined,
     });
-    const results = topicFollowStore.applyToList(data?.results || []);
+    const results = canEditProfile.value
+      ? topicFollowStore.applyToList(data?.results || [])
+      : data?.results || [];
     followTopicList.value = mergeById(followTopicList.value, results);
     followTopicPage.value = page;
     followTopicHasMore.value = Boolean(data?.next);
-    if (reset) topicFollowStore.clearFollowTopicsDirty();
+    if (reset && canEditProfile.value) topicFollowStore.clearFollowTopicsDirty();
   } catch (error) {
     if (error?.__handled401 || error?.response?.status === 401) return;
     message.error(error?.message || "获取关注的话题失败");
@@ -329,7 +390,10 @@ const fetchFollowTopics = async ({ reset } = { reset: false }) => {
 
 const ensureFollowTopicsLoaded = () => {
   if (followTopicLoading.value) return;
-  if (followTopicList.value.length > 0 && !topicFollowStore.followTopicsDirty) {
+  if (
+    followTopicList.value.length > 0 &&
+    (!canEditProfile.value || !topicFollowStore.followTopicsDirty)
+  ) {
     return;
   }
   fetchFollowTopics({ reset: true });
@@ -340,6 +404,7 @@ const handleLoadMoreFollowTopics = () => {
 };
 
 const handleToggleFollowTopic = async (topic) => {
+  if (!canEditProfile.value) return;
   const id = topic?.id;
   if (!id) return;
   if (followTopicFollowLoadingMap.value[id]) return;
@@ -392,6 +457,77 @@ const handleToggleFollowTopic = async (topic) => {
   }
 };
 
+const mergeByUserId = (items, incoming) => {
+  const map = new Map();
+  (items || []).forEach((t) => {
+    const id = t?.user?.id;
+    if (!id) return;
+    map.set(id, t);
+  });
+  (incoming || []).forEach((t) => {
+    const id = t?.user?.id;
+    if (!id) return;
+    if (!map.has(id)) {
+      map.set(id, t);
+      return;
+    }
+    const prev = map.get(id);
+    map.set(id, {
+      ...prev,
+      ...t,
+      user: { ...(prev?.user || {}), ...(t?.user || {}) },
+    });
+  });
+  return Array.from(map.values());
+};
+
+const fetchFollowUsers = async ({ reset } = { reset: false }) => {
+  if (!isOtherProfile.value) return;
+  if (followUserLoading.value || followUserLoadingMore.value) return;
+  if (!reset && !followUserHasMore.value) return;
+
+  if (reset) {
+    followUserPage.value = 0;
+    // 首次拉取前 unknown，避免组件的 IntersectionObserver 过早触发 load-more
+    followUserHasMore.value = false;
+    followUserList.value = [];
+    followUserLoading.value = true;
+  } else {
+    followUserLoadingMore.value = true;
+  }
+
+  const page = reset ? 1 : followUserPage.value + 1;
+
+  try {
+    const data = await fetchFollowingUsers({
+      page,
+      size: FOLLOW_USER_PAGE_SIZE,
+      user_id: targetUserId.value,
+    });
+    const results = data?.results || [];
+    followUserList.value = mergeByUserId(followUserList.value, results);
+    followUserPage.value = page;
+    followUserHasMore.value = Boolean(data?.next);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "获取Ta关注的人失败");
+  } finally {
+    followUserLoading.value = false;
+    followUserLoadingMore.value = false;
+  }
+};
+
+const ensureFollowUsersLoaded = () => {
+  if (!isOtherProfile.value) return;
+  if (followUserLoading.value) return;
+  if (followUserList.value.length > 0) return;
+  fetchFollowUsers({ reset: true });
+};
+
+const handleLoadMoreFollowUsers = () => {
+  fetchFollowUsers({ reset: false });
+};
+
 const tabCount = computed(() => ({
   [PROFILE_TAB.ANSWERS]: answerCount.value,
   [PROFILE_TAB.QUESTIONS]: userQuestionCount.value,
@@ -406,6 +542,15 @@ const tabCountLoading = computed(() => ({
   [PROFILE_TAB.COLLECTIONS]: collectionLoading.value && collectionCount.value === null,
   [PROFILE_TAB.FOLLOWS]: false,
 }));
+
+const followTabList = computed(() => {
+  if (canEditProfile.value) return PROFILE_FOLLOW_TAB_LIST;
+  return [
+    { key: PROFILE_FOLLOW_TAB.QUESTIONS, label: "Ta关注的问题" },
+    { key: PROFILE_FOLLOW_TAB.TOPICS, label: "Ta关注的话题" },
+    { key: PROFILE_FOLLOW_TAB.USERS_FOLLOWING, label: "Ta关注的人" },
+  ];
+});
 
 const handleSelectTab = (tab) => {
   activeTab.value = tab;
@@ -437,7 +582,34 @@ const handleSelectFollowTab = (tab) => {
     ensureFollowTopicsLoaded();
     return;
   }
+  if (tab === PROFILE_FOLLOW_TAB.USERS_FOLLOWING) {
+    if (isOtherProfile.value) ensureFollowUsersLoaded();
+  }
 };
+
+watch(
+  isOtherProfile,
+  (val) => {
+    if (!val) return;
+    // 他人主页不提供“关注我的人”这一子 Tab
+    if (activeFollowTab.value === PROFILE_FOLLOW_TAB.USERS_FOLLOWERS) {
+      activeFollowTab.value = PROFILE_FOLLOW_TAB.QUESTIONS;
+    }
+
+    // 他人主页不提供编辑态，避免切换用户后残留编辑面板
+    if (pageMode.value !== "feed") pageMode.value = "feed";
+  },
+  { immediate: true },
+);
+
+watch(
+  [isOtherProfile, () => activeFollowTab.value],
+  ([val, tab]) => {
+    if (!val) return;
+    if (tab === PROFILE_FOLLOW_TAB.USERS_FOLLOWING) ensureFollowUsersLoaded();
+  },
+  { immediate: true },
+);
 
 const handleClickFollowQuestion = (item) => {
   const id = item?.id;
@@ -449,6 +621,47 @@ const handleClickTopicItem = (topic) => {
   const id = topic?.id;
   if (!id) return;
   router.push(`/topic/${id}`);
+};
+
+const handleClickFollowUserItem = (item) => {
+  const id = item?.user?.id;
+  if (!id) return;
+  if (String(id) === String(selfUserId.value || "").trim()) {
+    router.push("/profile");
+    return;
+  }
+  router.push(`/user/${id}`);
+};
+
+const handleToggleFollowOtherUser = async (entry, action) => {
+  const id = entry?.user?.id;
+  if (!id) return;
+  if (String(id) === String(selfUserId.value || "").trim()) return;
+  if (followUserActionLoadingMap.value?.[id]) return;
+
+  setMapFlag(followUserActionLoadingMap, id, true);
+  try {
+    await toggleUserFollow(id, action);
+
+    // 关注状态以登录用户视角为准，拉一次 /card/ 对齐 is_following / is_mutual
+    const next = await fetchUserCard(id);
+    followUserList.value = (followUserList.value || []).map((t) =>
+      t?.user?.id === id
+        ? {
+            ...t,
+            is_following: Boolean(next?.is_following),
+            is_mutual: Boolean(next?.is_mutual),
+          }
+        : t,
+    );
+
+    message.success(Number(action) === 1 ? "已关注" : "已取消关注");
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "操作失败");
+  } finally {
+    clearMapFlag(followUserActionLoadingMap, id);
+  }
 };
 
 const handleClickAnswerItem = (item) => {
@@ -525,11 +738,13 @@ const applyProfile = (data) => {
     modified: data?.modified || profile.value?.modified || "",
   };
 
-  // 同步 Header 展示（用户名 + 头像）
-  authStore.updateUserInfo({
-    username: profile.value.username,
-    avatar: profile.value.avatar,
-  });
+  // 仅本人主页需要同步 Header 展示（用户名 + 头像）
+  if (canEditProfile.value) {
+    authStore.updateUserInfo({
+      username: profile.value.username,
+      avatar: profile.value.avatar,
+    });
+  }
 };
 
 const loadUserProfile = async () => {
@@ -537,8 +752,12 @@ const loadUserProfile = async () => {
   profileLoadError.value = "";
   profileLoading.value = true;
   try {
-    const data = await fetchUserProfile();
+    const data = isOtherProfile.value
+      ? await fetchOtherUserProfile(targetUserId.value)
+      : await fetchUserProfile();
     applyProfile(data);
+
+    // 草稿仅本人编辑会用到；他人主页也同步一份，便于复用同一套模板但不开放编辑
     draft.value = {
       ...draft.value,
       username: profile.value.username,
@@ -555,6 +774,52 @@ const loadUserProfile = async () => {
   }
 };
 
+const loadUserCard = async () => {
+  if (!isOtherProfile.value) {
+    card.value = null;
+    return;
+  }
+  if (cardLoading.value) return;
+
+  cardLoading.value = true;
+  try {
+    card.value = await fetchUserCard(targetUserId.value);
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    card.value = null;
+  } finally {
+    cardLoading.value = false;
+  }
+};
+
+const isMutual = computed(() => Boolean(card.value?.is_mutual));
+const isFollowing = computed(() => Boolean(card.value?.is_following));
+
+const handleToggleFollowUser = async () => {
+  if (!isOtherProfile.value) return;
+  if (followLoading.value || cardLoading.value) return;
+
+  const uid = String(targetUserId.value || "").trim();
+  if (!uid) return;
+
+  followLoading.value = true;
+  try {
+    const action = isFollowing.value ? 2 : 1;
+    await toggleUserFollow(uid, action);
+    await loadUserCard();
+    message.success(action === 1 ? "已关注" : "已取消关注");
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "操作失败");
+  } finally {
+    followLoading.value = false;
+  }
+};
+
+const handleMessageUser = () => {
+  message.info("私信功能开发中");
+};
+
 const applyAchievements = (data) => {
   achievements.value = {
     agree_count: Math.max(0, Number(data?.agree_count || 0)),
@@ -569,7 +834,9 @@ const loadUserAchievements = async () => {
   achievementError.value = "";
   achievementLoading.value = true;
   try {
-    const data = await fetchUserAchievements();
+    const data = await fetchUserAchievements({
+      user_id: isOtherProfile.value ? targetUserId.value : undefined,
+    });
     applyAchievements(data);
   } catch (error) {
     const msg = error?.message || "个人成就加载失败";
@@ -600,9 +867,21 @@ const loadCollections = async () => {
   collectionError.value = "";
   collectionLoading.value = true;
   try {
-    const data = await fetchAllCollections();
-    collectionCount.value = Math.max(0, Number(data?.count || 0));
-    collectionList.value = data?.results || [];
+    const data = await fetchAllCollections({
+      owner: isOtherProfile.value ? targetUserId.value : undefined,
+    });
+    const results = data?.results || [];
+
+    // 按你的需求：他人主页仅展示公开收藏夹（后端应已过滤，这里再做一次前端兜底）
+    const visible = isOtherProfile.value
+      ? results.filter((x) => x?.is_public !== false)
+      : results;
+
+    collectionCount.value = Math.max(
+      0,
+      Number(isOtherProfile.value ? visible.length : data?.count || 0),
+    );
+    collectionList.value = visible;
   } catch (error) {
     const msg = error?.message || "收藏夹加载失败";
     collectionError.value = msg;
@@ -619,6 +898,7 @@ const formatCollectionUpdated = (item) => {
 };
 
 const openCreateCollection = () => {
+  if (!canEditProfile.value) return;
   createCollectionForm.value = {
     title: "",
     description: "",
@@ -628,6 +908,7 @@ const openCreateCollection = () => {
 };
 
 const openEditCollection = (item) => {
+  if (!canEditProfile.value) return;
   if (!item?.id) return;
   if (deletingCollectionId.value) return;
 
@@ -646,6 +927,7 @@ const openEditCollection = (item) => {
 };
 
 const handleCreateCollection = async () => {
+  if (!canEditProfile.value) return;
   if (createCollectionLoading.value) return;
 
   const title = String(createCollectionForm.value.title || "").trim();
@@ -674,6 +956,7 @@ const handleCreateCollection = async () => {
 };
 
 const handleUpdateCollection = async () => {
+  if (!canEditProfile.value) return;
   if (editCollectionLoading.value) return;
   if (!editCollectionId.value) return;
 
@@ -713,6 +996,7 @@ const handleUpdateCollection = async () => {
 };
 
 const handleConfirmDeleteCollection = async (item) => {
+  if (!canEditProfile.value) return;
   const id = item?.id;
   if (!id) return;
   if (deletingCollectionId.value) return;
@@ -759,7 +1043,7 @@ const handleRetryCollections = () => {
 // 图片预览：选择后先本地预览，同时立即上传并调用接口保存
 const defaultCover = "/default-cover-image.png";
 const coverUrl = computed(() => profile.value.cover_image || defaultCover);
-const avatarUrl = computed(() => profile.value.avatar || authStore.avatarUrl);
+const avatarUrl = computed(() => profile.value.avatar || "/default-avatar.png");
 const avatarPreviewUrl = ref("");
 const coverPreviewUrl = ref("");
 
@@ -794,11 +1078,13 @@ onBeforeUnmount(() => {
 });
 
 const openAvatarPicker = () => {
+  if (!canEditProfile.value) return;
   if (avatarUploading.value) return;
   avatarInputRef.value?.click?.();
 };
 
 const openCoverPicker = () => {
+  if (!canEditProfile.value) return;
   if (coverUploading.value) return;
   coverInputRef.value?.click?.();
 };
@@ -971,6 +1257,7 @@ const draft = ref({
 });
 
 const enterEditProfile = () => {
+  if (!canEditProfile.value) return;
   pageMode.value = "edit-profile";
   editingField.value = null;
   isEditingUsername.value = false;
@@ -1056,6 +1343,7 @@ const cancelUsernameEdit = () => {
 };
 
 const saveUsername = async () => {
+  if (!canEditProfile.value) return;
   if (profileSaving.value) return;
 
   const username = String(draft.value.username ?? "").trim();
@@ -1078,13 +1366,140 @@ const saveUsername = async () => {
   }
 };
 
-onMounted(() => {
-  loadUserProfile();
-  loadUserAchievements();
-  loadCollections();
+const resetStateForTargetUser = () => {
+  // 切换用户时：关闭所有弹窗/抽屉，避免残留在新页面上
+  collectionDetailOpen.value = false;
+  activeCollection.value = null;
+  createCollectionOpen.value = false;
+  editCollectionOpen.value = false;
+
+  // 切换用户后回到默认 Tab，避免“带着上一个用户的 Tab 状态”进入新主页造成困惑
+  activeTab.value = PROFILE_TAB.ANSWERS;
+  activeFollowTab.value = PROFILE_FOLLOW_TAB.QUESTIONS;
+
+  // 他人主页不开放编辑：强制回到 feed
+  pageMode.value = "feed";
+  editingField.value = null;
+  isEditingUsername.value = false;
+  editorOpen.value = false;
+  pendingFieldToOpen.value = null;
+
+  // 清理本地预览 URL（避免“前一个用户的预览图”短暂残留）
+  revokeUrlSafely(avatarPreviewUrl.value);
+  revokeUrlSafely(coverPreviewUrl.value);
+  avatarPreviewUrl.value = "";
+  coverPreviewUrl.value = "";
+
+  // 重置展示用户信息：他人主页不使用登录态兜底，避免闪现“我的昵称/头像”
+  profile.value = canEditProfile.value
+    ? {
+        username: authStore.username || "未登录用户",
+        bio: "",
+        email: "",
+        phone: "",
+        avatar: authStore.avatar || "",
+        cover_image: "",
+      }
+    : {
+        username: "",
+        bio: "",
+        email: "",
+        phone: "",
+        avatar: "",
+        cover_image: "",
+      };
+
+  profileLoadError.value = "";
+  profileLoading.value = false;
+  card.value = null;
+  cardLoading.value = false;
+  followLoading.value = false;
+
+  achievements.value = { agree_count: 0, answer_count: 0, follower_count: 0 };
+  achievementError.value = "";
+  achievementLoading.value = false;
+
+  collectionCount.value = null;
+  collectionList.value = [];
+  collectionError.value = "";
+  collectionLoading.value = false;
+
+  answerCount.value = null;
+  answerList.value = [];
+  answerPage.value = 0;
+  answerHasMore.value = false;
+  answerLoading.value = false;
+  answerLoadingMore.value = false;
+  answerVoteLoadingMap.value = {};
+
+  userQuestionCount.value = null;
+  userQuestionList.value = [];
+  userQuestionPage.value = 0;
+  userQuestionHasMore.value = false;
+  userQuestionLoading.value = false;
+  userQuestionLoadingMore.value = false;
+
+  followQuestionList.value = [];
+  followQuestionPage.value = 0;
+  followQuestionHasMore.value = false;
+  followQuestionLoading.value = false;
+  followQuestionLoadingMore.value = false;
+
+  followTopicList.value = [];
+  followTopicPage.value = 0;
+  followTopicHasMore.value = false;
+  followTopicLoading.value = false;
+  followTopicLoadingMore.value = false;
+  followTopicFollowLoadingMap.value = {};
+
+  followUserList.value = [];
+  followUserPage.value = 0;
+  followUserHasMore.value = false;
+  followUserLoading.value = false;
+  followUserLoadingMore.value = false;
+  followUserActionLoadingMap.value = {};
+
+  draft.value = {
+    username: profile.value.username,
+    bio: profile.value.bio,
+    email: profile.value.email,
+    phone: profile.value.phone,
+  };
+};
+
+const loadForTargetUser = async () => {
+  // profile / achievements / collections / card 并行拉取，列表按需加载
+  await Promise.all([
+    loadUserProfile(),
+    loadUserAchievements(),
+    loadCollections(),
+    loadUserCard(),
+  ]);
+
+  // 默认 Tab：回答 + 提问先预加载，保持与“我的主页”一致
   ensureAnswersLoaded();
   ensureUserQuestionsLoaded();
-});
+
+  // 若当前停留在关注 Tab，补齐对应数据
+  if (activeTab.value === PROFILE_TAB.FOLLOWS) {
+    if (activeFollowTab.value === PROFILE_FOLLOW_TAB.QUESTIONS) {
+      ensureFollowQuestionsLoaded();
+    } else if (activeFollowTab.value === PROFILE_FOLLOW_TAB.TOPICS) {
+      ensureFollowTopicsLoaded();
+    } else if (activeFollowTab.value === PROFILE_FOLLOW_TAB.USERS_FOLLOWING) {
+      if (isOtherProfile.value) ensureFollowUsersLoaded();
+    }
+  }
+};
+
+watch(
+  [() => targetUserId.value, () => isOtherProfile.value],
+  () => {
+    resetStateForTargetUser();
+    loadForTargetUser();
+  },
+  { immediate: true },
+);
 </script>
 
 <template>
@@ -1102,37 +1517,90 @@ onMounted(() => {
       <div class="cover-mask"></div>
       <div v-if="profileLoading && !profileLoadError" class="cover-skeleton" aria-hidden="true"></div>
 
-      <div class="cover-edit">
+      <div v-if="canEditProfile" class="cover-edit">
         <button class="cover-btn" type="button" @click="openCoverPicker">
           <CameraOutlined />
           <span>修改我的封面背景</span>
         </button>
       </div>
 
-      <input ref="coverInputRef" class="file-input" type="file" accept="image/*" @change="handleCoverChange" />
+      <input
+        v-if="canEditProfile"
+        ref="coverInputRef"
+        class="file-input"
+        type="file"
+        accept="image/*"
+        @change="handleCoverChange"
+      />
     </section>
 
     <div class="container">
       <section class="hero-card">
-        <div class="avatar-block" @click="openAvatarPicker">
+        <div class="avatar-block" :class="{ readonly: !canEditProfile }" @click="openAvatarPicker">
           <div class="avatar-wrap">
             <img class="avatar" :src="effectiveAvatarUrl" alt="头像" />
-            <div class="avatar-overlay" :class="{ editing: pageMode === 'edit-profile' }">
+            <div
+              v-if="canEditProfile"
+              class="avatar-overlay"
+              :class="{ editing: pageMode === 'edit-profile' }"
+            >
               <CameraOutlined />
               <div class="overlay-text">修改我的头像</div>
             </div>
           </div>
-          <input ref="avatarInputRef" class="file-input" type="file" accept="image/*" @change="handleAvatarChange" />
+          <input
+            v-if="canEditProfile"
+            ref="avatarInputRef"
+            class="file-input"
+            type="file"
+            accept="image/*"
+            @change="handleAvatarChange"
+          />
         </div>
 
         <div class="hero-main">
           <Transition name="fade-slide" mode="out-in">
             <div v-if="pageMode === 'feed'" key="hero-view" class="hero-view">
               <div class="hero-top">
-                <div class="hero-title">{{ profile.username }}</div>
-                <button class="edit-profile-btn" type="button" @click="enterEditProfile">
-                  编辑个人资料
-                </button>
+                <div class="hero-title">
+                  {{ profile.username }}
+                  <span v-if="isOtherProfile && isMutual" class="mutual-badge">
+                    <img class="mutual-icon" src="/mutual-follow.svg" alt="互关" />
+                    <span>互关</span>
+                  </span>
+                </div>
+
+                <div class="hero-actions">
+                  <button
+                    v-if="canEditProfile"
+                    class="edit-profile-btn"
+                    type="button"
+                    @click="enterEditProfile"
+                  >
+                    编辑个人资料
+                  </button>
+
+                  <template v-else>
+                    <button
+                      class="follow-user-btn"
+                      :class="{ following: isFollowing }"
+                      type="button"
+                      :disabled="followLoading || cardLoading"
+                      @click="handleToggleFollowUser"
+                    >
+                      <UserAddOutlined />
+                      <span>
+                        <template v-if="followLoading">处理中</template>
+                        <template v-else>{{ isFollowing ? "已关注" : "关注Ta" }}</template>
+                      </span>
+                    </button>
+
+                    <button class="message-user-btn" type="button" @click="handleMessageUser">
+                      <MessageOutlined />
+                      <span>私信Ta</span>
+                    </button>
+                  </template>
+                </div>
               </div>
               <div v-if="profileLoadError" class="profile-error">
                 <a-alert
@@ -1195,7 +1663,7 @@ onMounted(() => {
 
                 <div class="tabs-right">
                   <button
-                    v-if="activeTab === PROFILE_TAB.COLLECTIONS"
+                    v-if="canEditProfile && activeTab === PROFILE_TAB.COLLECTIONS"
                     class="create-collection-btn"
                     type="button"
                     @click="openCreateCollection"
@@ -1208,7 +1676,7 @@ onMounted(() => {
 
               <div v-if="activeTab === PROFILE_TAB.FOLLOWS" class="follow-subtabs">
                 <button
-                  v-for="tab in PROFILE_FOLLOW_TAB_LIST"
+                  v-for="tab in followTabList"
                   :key="tab.key"
                   class="subtab"
                   :class="{ active: activeFollowTab === tab.key }"
@@ -1261,7 +1729,10 @@ onMounted(() => {
                 </div>
 
                 <div v-else class="collection-grid-wrap">
-                  <a-empty v-if="collectionList.length === 0" description="暂无收藏夹" />
+                  <a-empty
+                    v-if="collectionList.length === 0"
+                    :description="canEditProfile ? '暂无收藏夹' : '暂无公开收藏夹'"
+                  />
 
                   <TransitionGroup v-else tag="div" name="collection-fade" class="collection-grid">
                     <div
@@ -1275,7 +1746,7 @@ onMounted(() => {
                       <div class="collection-top">
                         <div class="collection-title">{{ item.title }}</div>
                         <div class="collection-actions">
-                          <div class="collection-ops">
+                          <div v-if="canEditProfile" class="collection-ops">
                             <button
                               class="collection-action action-edit"
                               type="button"
@@ -1329,7 +1800,7 @@ onMounted(() => {
                     :loading="followQuestionLoading"
                     :loadingMore="followQuestionLoadingMore"
                     :hasMore="followQuestionHasMore"
-                    emptyText="暂无关注的问题"
+                    :emptyText="canEditProfile ? '暂无关注的问题' : '暂无Ta关注的问题'"
                     @load-more="handleLoadMoreFollowQuestions"
                     @item-click="handleClickFollowQuestion"
                   />
@@ -1341,12 +1812,33 @@ onMounted(() => {
                     :loading="followTopicLoading"
                     :loadingMore="followTopicLoadingMore"
                     :hasMore="followTopicHasMore"
-                    :followLoadingMap="followTopicFollowLoadingMap"
-                    unfollowBehavior="remove"
-                    emptyText="暂无关注的话题"
+                    :followLoadingMap="canEditProfile ? followTopicFollowLoadingMap : {}"
+                    :unfollowBehavior="canEditProfile ? 'remove' : 'toggle'"
+                    :showFollowButton="canEditProfile"
+                    :emptyText="canEditProfile ? '暂无关注的话题' : '暂无Ta关注的话题'"
                     @load-more="handleLoadMoreFollowTopics"
                     @toggle-follow="handleToggleFollowTopic"
                     @item-click="handleClickTopicItem"
+                  />
+                </template>
+
+                <template
+                  v-else-if="activeFollowTab === PROFILE_FOLLOW_TAB.USERS_FOLLOWING && isOtherProfile"
+                >
+                  <UserFollowList
+                    mode="others"
+                    :showTime="false"
+                    emptyText="暂无Ta关注的人"
+                    :items="followUserList"
+                    :loading="followUserLoading"
+                    :loadingMore="followUserLoadingMore"
+                    :hasMore="followUserHasMore"
+                    :showAction="true"
+                    :selfUserId="selfUserId"
+                    :actionLoadingMap="followUserActionLoadingMap"
+                    @load-more="handleLoadMoreFollowUsers"
+                    @toggle-follow="handleToggleFollowOtherUser"
+                    @item-click="handleClickFollowUserItem"
                   />
                 </template>
 
@@ -1503,82 +1995,85 @@ onMounted(() => {
     <CollectionAnswerDrawer
       v-model:open="collectionDetailOpen"
       :collection="activeCollection"
+      :readonly="!canEditProfile"
       @count-change="handleCollectionDetailCountChange"
     />
 
-    <a-modal
-      v-model:open="createCollectionOpen"
-      title="新建收藏夹"
-      :confirm-loading="createCollectionLoading"
-      ok-text="创建"
-      cancel-text="取消"
-      @ok="handleCreateCollection"
-    >
-      <a-form layout="vertical">
-        <a-form-item label="收藏夹标题" required>
-          <a-input
-            v-model:value="createCollectionForm.title"
-            placeholder="请输入收藏夹标题"
-            :maxlength="40"
-            show-count
-          />
-        </a-form-item>
+    <template v-if="canEditProfile">
+      <a-modal
+        v-model:open="createCollectionOpen"
+        title="新建收藏夹"
+        :confirm-loading="createCollectionLoading"
+        ok-text="创建"
+        cancel-text="取消"
+        @ok="handleCreateCollection"
+      >
+        <a-form layout="vertical">
+          <a-form-item label="收藏夹标题" required>
+            <a-input
+              v-model:value="createCollectionForm.title"
+              placeholder="请输入收藏夹标题"
+              :maxlength="40"
+              show-count
+            />
+          </a-form-item>
 
-        <a-form-item label="收藏夹简介">
-          <a-textarea
-            v-model:value="createCollectionForm.description"
-            placeholder="简单介绍一下这个收藏夹（可选）"
-            :rows="3"
-            :maxlength="120"
-            show-count
-          />
-        </a-form-item>
+          <a-form-item label="收藏夹简介">
+            <a-textarea
+              v-model:value="createCollectionForm.description"
+              placeholder="简单介绍一下这个收藏夹（可选）"
+              :rows="3"
+              :maxlength="120"
+              show-count
+            />
+          </a-form-item>
 
-        <a-form-item label="是否公开">
-          <a-switch v-model:checked="createCollectionForm.is_public" />
-          <span class="public-hint">
-            {{ createCollectionForm.is_public ? "公开" : "私密" }}
-          </span>
-        </a-form-item>
-      </a-form>
-    </a-modal>
+          <a-form-item label="是否公开">
+            <a-switch v-model:checked="createCollectionForm.is_public" />
+            <span class="public-hint">
+              {{ createCollectionForm.is_public ? "公开" : "私密" }}
+            </span>
+          </a-form-item>
+        </a-form>
+      </a-modal>
 
-    <a-modal
-      v-model:open="editCollectionOpen"
-      title="编辑收藏夹"
-      :confirm-loading="editCollectionLoading"
-      ok-text="保存"
-      cancel-text="取消"
-      @ok="handleUpdateCollection"
-    >
-      <a-form layout="vertical">
-        <a-form-item label="收藏夹标题" required>
-          <a-input
-            v-model:value="editCollectionForm.title"
-            placeholder="请输入收藏夹标题"
-            :maxlength="40"
-            show-count
-          />
-        </a-form-item>
+      <a-modal
+        v-model:open="editCollectionOpen"
+        title="编辑收藏夹"
+        :confirm-loading="editCollectionLoading"
+        ok-text="保存"
+        cancel-text="取消"
+        @ok="handleUpdateCollection"
+      >
+        <a-form layout="vertical">
+          <a-form-item label="收藏夹标题" required>
+            <a-input
+              v-model:value="editCollectionForm.title"
+              placeholder="请输入收藏夹标题"
+              :maxlength="40"
+              show-count
+            />
+          </a-form-item>
 
-        <a-form-item label="收藏夹简介">
-          <a-textarea
-            v-model:value="editCollectionForm.description"
-            placeholder="简单介绍一下这个收藏夹（可选）"
-            :rows="3"
-            :maxlength="120"
-            show-count
-          />
-        </a-form-item>
+          <a-form-item label="收藏夹简介">
+            <a-textarea
+              v-model:value="editCollectionForm.description"
+              placeholder="简单介绍一下这个收藏夹（可选）"
+              :rows="3"
+              :maxlength="120"
+              show-count
+            />
+          </a-form-item>
 
-        <a-form-item label="是否公开">
-          <a-switch v-model:checked="editCollectionForm.is_public" />
-          <span class="public-hint">
-            {{ editCollectionForm.is_public ? "公开" : "私密" }}
-          </span>
-        </a-form-item>
-      </a-form>
-    </a-modal>
+          <a-form-item label="是否公开">
+            <a-switch v-model:checked="editCollectionForm.is_public" />
+            <span class="public-hint">
+              {{ editCollectionForm.is_public ? "公开" : "私密" }}
+            </span>
+          </a-form-item>
+        </a-form>
+      </a-modal>
+    </template>
   </div>
 </template>
 
@@ -1689,6 +2184,10 @@ onMounted(() => {
   cursor: pointer;
 }
 
+.avatar-block.readonly {
+  cursor: default;
+}
+
 .avatar-wrap {
   position: relative;
   width: 156px;
@@ -1794,6 +2293,87 @@ onMounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 12px;
+}
+
+.mutual-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(120, 200, 65, 0.12);
+  color: var(--brand-color);
+  font-size: 12px;
+  font-weight: 900;
+  line-height: 1;
+  border: 1px solid rgba(120, 200, 65, 0.25);
+}
+
+.mutual-icon {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+
+.hero-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex: none;
+}
+
+.follow-user-btn,
+.message-user-btn {
+  border-radius: 10px;
+  cursor: pointer;
+  font-weight: 800;
+  padding: 10px 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease,
+    transform 0.12s ease;
+}
+
+.follow-user-btn {
+  border: 1px solid var(--brand-color);
+  background: var(--brand-color);
+  color: #fff;
+}
+
+.follow-user-btn.following {
+  background: #fff;
+  color: var(--brand-color);
+}
+
+.follow-user-btn:hover {
+  border-color: var(--brand-color-dark);
+  background: var(--brand-color-dark);
+}
+
+.follow-user-btn.following:hover {
+  border-color: rgba(120, 200, 65, 0.55);
+  background: rgba(120, 200, 65, 0.08);
+  color: var(--brand-color);
+}
+
+.follow-user-btn:disabled,
+.message-user-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.message-user-btn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+}
+
+.message-user-btn:hover {
+  border-color: rgba(120, 200, 65, 0.45);
+  color: var(--brand-color);
+  background: rgba(120, 200, 65, 0.06);
 }
 
 .hero-sub {

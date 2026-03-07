@@ -7,6 +7,7 @@ export const fetchUserAnswerList = async (params = {}) => {
     params: {
       page: params.page || 1,
       size: params.size || 10,
+      user_id: params.user_id || undefined,
     },
   });
 

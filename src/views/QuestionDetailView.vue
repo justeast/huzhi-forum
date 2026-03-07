@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { DownOutlined, UserAddOutlined } from "@ant-design/icons-vue";
-import { useRoute } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import AppHeader from "../components/AppHeader.vue";
 import QuestionDetailHeader from "../components/QuestionDetailHeader.vue";
 import AnswerComposer from "../components/AnswerComposer.vue";
@@ -14,7 +14,7 @@ import {
   voteQuestion,
 } from "../api/question";
 import { fetchAnswerList, voteAnswer } from "../api/answer";
-import { fetchUserCard } from "../api/user";
+import { fetchUserCard, toggleUserFollow } from "../api/user";
 import { formatCount } from "../utils/format";
 import { VOTE_STATUS } from "../constants/vote";
 import { toggleTopicFollow } from "../api/topic";
@@ -25,8 +25,11 @@ import {
   fetchAllCollectionsContainingAnswer,
   toggleCollectAnswer,
 } from "../api/collection";
+import { useAuthStore } from "../stores/auth";
 
 const route = useRoute();
+const router = useRouter();
+const authStore = useAuthStore();
 const topicFollowStore = useTopicFollowStore();
 
 const headerKeyword = ref("");
@@ -56,6 +59,7 @@ const firstAnswer = computed(() => answers.value?.[0] || null);
 
 const author = ref(null);
 const authorLoading = ref(false);
+const authorFollowLoading = ref(false);
 
 // 收藏弹窗：当前回答 id + 收藏夹列表 + 勾选态
 const collectModalOpen = ref(false);
@@ -119,8 +123,58 @@ const openComposerAndScroll = () => {
   composerRef.value?.openAndScroll?.();
 };
 
+const handleClickUserProfile = (userId) => {
+  const id = String(userId || "").trim();
+  if (!id) return;
+  if (id === String(authStore.userId || "").trim()) {
+    router.push("/profile");
+    return;
+  }
+  router.push(`/user/${id}`);
+};
+
 const handleStickyWriteAnswer = () => {
   openComposerAndScroll();
+};
+
+const refreshAuthorCard = async (userId) => {
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+
+  const seq = (userCardSeq += 1);
+  authorLoading.value = true;
+  try {
+    const data = await fetchUserCard(uid);
+    if (seq !== userCardSeq) return;
+    author.value = data;
+  } catch (error) {
+    if (error?.__handled401) return;
+    message.error(error?.message || "获取作者信息失败");
+  } finally {
+    if (seq === userCardSeq) authorLoading.value = false;
+  }
+};
+
+const handleToggleAuthorFollow = async (userId) => {
+  const uid = String(userId || "").trim();
+  if (!uid) return;
+  if (String(uid) === String(authStore.userId || "").trim()) return;
+  if (authorFollowLoading.value) return;
+
+  const isFollowing = Boolean(author.value?.is_following);
+  const action = isFollowing ? 2 : 1;
+
+  authorFollowLoading.value = true;
+  try {
+    await toggleUserFollow(uid, action);
+    await refreshAuthorCard(uid);
+    message.success(action === 1 ? "已关注" : "已取消关注");
+  } catch (error) {
+    if (error?.__handled401) return;
+    message.error(error?.message || "操作失败");
+  } finally {
+    authorFollowLoading.value = false;
+  }
 };
 
 const observeStickyTrigger = () => {
@@ -617,20 +671,7 @@ watch(
   async (userId) => {
     author.value = null;
     if (!userId) return;
-
-    const seq = (userCardSeq += 1);
-    authorLoading.value = true;
-
-    try {
-      const data = await fetchUserCard(userId);
-      if (seq !== userCardSeq) return;
-      author.value = data;
-    } catch (error) {
-      if (error?.__handled401) return;
-      message.error(error?.message || "获取作者信息失败");
-    } finally {
-      if (seq === userCardSeq) authorLoading.value = false;
-    }
+    refreshAuthorCard(userId);
   },
   { immediate: true },
 );
@@ -748,10 +789,12 @@ const answerTotalText = computed(() => {
               :loadingMore="answerLoadingMore"
               :hasMore="answerHasMore"
               :voteLoadingMap="answerVoteLoadingMap"
+              :enable-user-link="true"
               emptyText="暂无回答"
               @load-more="loadMoreAnswers"
               @vote="handleVoteAnswer"
               @collect="openCollectModal"
+              @user-click="handleClickUserProfile"
             />
           </div>
         </div>
@@ -760,7 +803,16 @@ const answerTotalText = computed(() => {
           <a-card class="side-card" :bordered="false">
             <div class="side-title">关于作者</div>
             <div v-if="firstAnswer" class="side-body">
-              <AuthorCard :user="author" :loading="authorLoading" />
+              <AuthorCard
+                :user="author"
+                :loading="authorLoading"
+                :enable-user-link="true"
+                :selfUserId="authStore.userId"
+                :followLoading="authorFollowLoading"
+                :disableFollow="String(author?.id || '') === String(authStore.userId || '')"
+                @user-click="handleClickUserProfile"
+                @follow-toggle="handleToggleAuthorFollow"
+              />
             </div>
             <a-empty v-else description="暂无回答" />
           </a-card>

@@ -9,6 +9,8 @@ const props = defineProps({
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无话题" },
   followLoadingMap: { type: Object, default: () => ({}) },
+  // 是否显示“关注/已关注”按钮（他人主页里展示 Ta 关注的话题时建议隐藏）
+  showFollowButton: { type: Boolean, default: true },
   // 取消关注后的表现：toggle=仅切换按钮；remove=父组件移除后可配合 TransitionGroup 做擦除动画
   unfollowBehavior: { type: String, default: "toggle" },
   // 话题卡片是否可点击进入详情
@@ -23,7 +25,12 @@ let observer = null;
 const showEmpty = computed(() => !props.loading && props.topics.length === 0);
 
 const canLoadMore = computed(
-  () => props.hasMore && !props.loading && !props.loadingMore,
+  // 列表为空时不触发自动 load-more，避免“首屏未加载就先翻页”的请求
+  () =>
+    props.topics.length > 0 &&
+    props.hasMore &&
+    !props.loading &&
+    !props.loadingMore,
 );
 
 const observeSentinel = () => {
@@ -114,6 +121,7 @@ const handleClickItem = (topic) => {
             </div>
 
             <button
+              v-if="showFollowButton"
               class="follow-btn"
               :class="{ following: Boolean(topic?.is_following) }"
               type="button"

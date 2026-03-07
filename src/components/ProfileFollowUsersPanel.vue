@@ -1,6 +1,7 @@
 <script setup>
 import { computed, watch, ref } from "vue";
 import { message } from "ant-design-vue";
+import { useRouter } from "vue-router";
 import { PROFILE_FOLLOW_TAB } from "../constants/profileNav";
 import {
   fetchFollowerUsers,
@@ -8,6 +9,10 @@ import {
   toggleUserFollow,
 } from "../api/user";
 import UserFollowList from "./UserFollowList.vue";
+import { useAuthStore } from "../stores/auth";
+
+const router = useRouter();
+const authStore = useAuthStore();
 
 const props = defineProps({
   activeKey: { type: String, required: true },
@@ -216,8 +221,14 @@ const handleToggleFollow = async (entry, action) => {
   }
 };
 
-const handleClickItem = () => {
-  message.info("用户主页功能开发中");
+const handleClickItem = (item) => {
+  const id = item?.user?.id;
+  if (!id) return;
+  if (String(id) === String(authStore.userId || "").trim()) {
+    router.push("/profile");
+    return;
+  }
+  router.push(`/user/${id}`);
 };
 </script>
 

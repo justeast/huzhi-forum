@@ -31,6 +31,7 @@ export const fetchFollowingQuestionList = async (params = {}) => {
       page: params.page || 1,
       size: params.size || 10,
       search: params.search || undefined,
+      user_id: params.user_id || undefined,
     },
   });
 
@@ -48,6 +49,7 @@ export const fetchUserQuestionList = async (params = {}) => {
     params: {
       page: params.page || 1,
       size: params.size || 10,
+      user_id: params.user_id || undefined,
     },
   });
 

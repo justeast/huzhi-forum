@@ -25,7 +25,12 @@ const expandedAnswerId = ref("");
 const showEmpty = computed(() => !props.loading && props.answers.length === 0);
 
 const canLoadMore = computed(
-  () => props.hasMore && !props.loading && !props.loadingMore,
+  // 列表为空时不触发自动 load-more，避免“首屏未加载就先翻页”的请求
+  () =>
+    props.answers.length > 0 &&
+    props.hasMore &&
+    !props.loading &&
+    !props.loadingMore,
 );
 
 const observeSentinel = () => {

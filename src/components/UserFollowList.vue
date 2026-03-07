@@ -8,9 +8,16 @@ const props = defineProps({
   loadingMore: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无数据" },
+  // 是否显示时间行（他人主页的“Ta关注的人”不需要展示关注时间）
+  showTime: { type: Boolean, default: true },
   timePrefix: { type: String, default: "关注于" },
-  mode: { type: String, default: "following" }, // following | followers
+  // following: 我关注的人；followers: 关注我的人；others: Ta关注的人（对非我用户提供关注操作）
+  mode: { type: String, default: "following" }, // following | followers | others
   actionLoadingMap: { type: Object, default: () => ({}) },
+  // 是否显示“关注/取消关注”等操作按钮（他人主页展示 Ta 关注的人时可隐藏）
+  showAction: { type: Boolean, default: true },
+  // 当前登录用户 id：用于在列表里遇到“我自己”时隐藏关注按钮
+  selfUserId: { type: String, default: "" },
 });
 
 const emit = defineEmits(["load-more", "toggle-follow", "item-click"]);
@@ -21,7 +28,9 @@ let observer = null;
 const showEmpty = computed(() => !props.loading && props.items.length === 0);
 
 const canLoadMore = computed(
-  () => props.hasMore && !props.loading && !props.loadingMore,
+  // 列表为空时不触发自动 load-more，避免“首屏未加载就先翻页”的请求
+  () =>
+    props.items.length > 0 && props.hasMore && !props.loading && !props.loadingMore,
 );
 
 const observeSentinel = () => {
@@ -69,13 +78,28 @@ const getBio = (item) => {
   return String(bio || "").trim();
 };
 
-const isMutual = (item) => Boolean(item?.is_mutual);
+const isMutual = (item) =>
+  // 不同列表接口返回字段位置可能不同（有的在根上，有的在 user 上）
+  Boolean(item?.is_mutual ?? item?.user?.is_mutual);
+
+const isFollowingByMe = (item) =>
+  // 后端部分列表接口可能不返回 is_following（例如 Ta 关注的人列表），但会返回 is_mutual
+  // 互关意味着“我已关注 Ta”，因此可用 is_mutual 兜底判断按钮文案/动作
+  Boolean(
+    item?.is_following ??
+      item?.user?.is_following ??
+      item?.is_mutual ??
+      item?.user?.is_mutual,
+  );
 
 const getAction = (item) => {
   const mutual = isMutual(item);
   if (props.mode === "following") return { action: 2, label: "取消关注" };
-  // followers
-  return mutual ? { action: 2, label: "取消关注" } : { action: 1, label: "关注" };
+  if (props.mode === "followers") {
+    return mutual ? { action: 2, label: "取消关注" } : { action: 1, label: "关注" };
+  }
+  // others：基于“当前登录用户视角”的 is_following 做切换
+  return isFollowingByMe(item) ? { action: 2, label: "取消关注" } : { action: 1, label: "关注" };
 };
 
 const handleToggle = (item) => {
@@ -87,6 +111,13 @@ const handleToggle = (item) => {
 
 const handleClickItem = (item) => {
   emit("item-click", item);
+};
+
+const isSelfRow = (item) => {
+  const uid = String(item?.user?.id || "").trim();
+  const self = String(props.selfUserId || "").trim();
+  if (!uid || !self) return false;
+  return uid === self;
 };
 </script>
 
@@ -115,25 +146,32 @@ const handleClickItem = (item) => {
             </div>
 
             <div class="info">
-              <div class="name">{{ item?.user?.username }}</div>
+              <div class="name-row">
+                <div class="name">{{ item?.user?.username }}</div>
+                <span v-if="isSelfRow(item)" class="self-badge">我</span>
+              </div>
               <div class="bio">
                 {{ getBio(item) || "暂无简介" }}
               </div>
             </div>
           </div>
 
-          <div class="right">
-            <div class="time">
+          <div
+            class="right"
+            :class="{ compact: !showAction, 'no-time': !showTime }"
+          >
+            <div v-if="showTime" class="time">
               {{ timePrefix }} {{ formatDateTimeMinute(item?.followed_at) }}
             </div>
 
-            <div class="op-slot">
+            <div v-if="showAction" class="op-slot">
               <span v-if="isMutual(item)" class="mutual-badge">
                 <img class="mutual-icon" src="/mutual-follow.svg" alt="互关" />
                 <span>已互关</span>
               </span>
 
               <button
+                v-if="!isSelfRow(item)"
                 class="op-btn"
                 type="button"
                 :class="{ danger: getAction(item).action === 2 }"
@@ -217,16 +255,39 @@ const handleClickItem = (item) => {
   min-width: 0;
 }
 
+.name-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
 .name {
   font-size: 18px;
   font-weight: 900;
   color: #111827;
   line-height: 1.2;
   transition: color 0.18s ease;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .row:hover .name {
   color: var(--brand-color);
+}
+
+.self-badge {
+  flex: none;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 200, 65, 0.22);
+  background: rgba(120, 200, 65, 0.12);
+  color: var(--brand-color);
+  font-weight: 900;
+  font-size: 12px;
+  line-height: 1.2;
 }
 
 .bio {
@@ -251,6 +312,16 @@ const handleClickItem = (item) => {
   grid-template-columns: var(--time-width) var(--op-width);
   align-items: center;
   gap: 14px;
+}
+
+.right.no-time {
+  width: var(--op-width);
+  grid-template-columns: 1fr;
+}
+
+.right.compact {
+  width: auto;
+  grid-template-columns: 1fr;
 }
 
 .time {

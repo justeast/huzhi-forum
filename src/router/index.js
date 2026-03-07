@@ -22,6 +22,13 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: "/user/:id",
+    name: "user-profile",
+    // 他人主页：复用 ProfileView，确保与“我的主页”观感一致
+    component: () => import("../views/ProfileView.vue"),
+    meta: { requiresAuth: true },
+  },
+  {
     path: "/question/:id",
     name: "question-detail",
     component: () => import("../views/QuestionDetailView.vue"),

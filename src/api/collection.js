@@ -16,7 +16,8 @@ export const fetchCollectionPage = async (paramsOrUrl = {}) => {
 };
 
 // 自动翻页拉取用户全部收藏夹（根据 data.next 继续请求）
-export const fetchAllCollections = async ({ size = 20 } = {}) => {
+// params: { size?: number, owner?: string }
+export const fetchAllCollections = async ({ size = 20, owner } = {}) => {
   const list = [];
   let count = 0;
   let nextUrl = null;
@@ -27,6 +28,8 @@ export const fetchAllCollections = async ({ size = 20 } = {}) => {
       nextUrl || {
         page,
         size,
+        // 后端参数名为 owner（收藏夹拥有者）
+        owner: owner || undefined,
       },
     );
 

@@ -21,9 +21,11 @@ const props = defineProps({
   emptyText: { type: String, default: "暂无回答" },
   voteLoadingMap: { type: Object, default: () => ({}) },
   collectLoadingMap: { type: Object, default: () => ({}) },
+  // 是否启用“点击头像进入用户主页”
+  enableUserLink: { type: Boolean, default: false },
 });
 
-const emit = defineEmits(["load-more", "vote", "collect"]);
+const emit = defineEmits(["load-more", "vote", "collect", "user-click"]);
 
 const openCommentAnswerId = ref(null);
 const expandedMap = reactive({});
@@ -116,6 +118,13 @@ const handleExpandedChange = (id, value) => {
 const isCollected = (value) => Boolean(value);
 
 const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
+
+const handleClickUser = (item) => {
+  if (!props.enableUserLink) return;
+  const uid = item?.respondent?.id;
+  if (!uid) return;
+  emit("user-click", uid);
+};
 </script>
 
 <template>
@@ -126,7 +135,17 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
       <div v-else class="list">
         <div v-for="item in answers" :key="item.id" class="row">
           <div class="head">
-            <a-avatar :size="36" :src="getAvatar(item)" />
+            <div
+              class="avatar-link"
+              :class="{ clickable: enableUserLink }"
+              :role="enableUserLink ? 'button' : undefined"
+              :tabindex="enableUserLink ? 0 : undefined"
+              @click.stop="handleClickUser(item)"
+              @keydown.enter.prevent="handleClickUser(item)"
+              @keydown.space.prevent="handleClickUser(item)"
+            >
+              <a-avatar :size="36" :src="getAvatar(item)" />
+            </div>
             <div class="meta">
               <div class="name">
                 {{ item?.respondent?.username || "匿名用户" }}
@@ -327,6 +346,16 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.avatar-link.clickable {
+  cursor: pointer;
+}
+
+.avatar-link.clickable:focus-visible {
+  outline: 2px solid rgba(120, 200, 65, 0.6);
+  outline-offset: 2px;
+  border-radius: 10px;
 }
 
 .meta {

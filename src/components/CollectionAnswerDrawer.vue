@@ -13,6 +13,8 @@ import { formatCount, formatDateTimeMinute } from "../utils/format";
 const props = defineProps({
   open: { type: Boolean, default: false },
   collection: { type: Object, default: null },
+  // 只读模式：用于查看他人公开收藏夹（隐藏“移出收藏夹”等可变更操作）
+  readonly: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:open", "count-change"]);
@@ -251,6 +253,10 @@ const handleToggleComment = (item) => {
 };
 
 const handleRemove = async (item) => {
+  if (props.readonly) {
+    message.info("该收藏夹为只读，暂不支持移出");
+    return;
+  }
   const cid = String(collectionId.value || "");
   const id = item?.id;
   if (!cid || !id) return;
@@ -369,6 +375,7 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
                     </button>
 
                     <button
+                      v-if="!readonly"
                       class="action-meta link remove-btn"
                       type="button"
                       :disabled="isRemoving(item?.id)"
@@ -409,6 +416,7 @@ const getAvatar = (item) => item?.respondent?.avatar || "/default-avatar.png";
               </button>
 
               <button
+                v-if="!readonly"
                 class="action-meta link remove-btn"
                 type="button"
                 :disabled="isRemoving(item?.id)"
