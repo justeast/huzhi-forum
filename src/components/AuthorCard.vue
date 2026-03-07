@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { MessageOutlined, UserAddOutlined } from "@ant-design/icons-vue";
 import { formatCount } from "../utils/format";
+import { useChatStore } from "../stores/chat";
 
 const props = defineProps({
   user: { type: Object, default: null },
@@ -17,6 +18,7 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["user-click", "follow-toggle"]);
+const chatStore = useChatStore();
 
 const avatarUrl = computed(() => props.user?.avatar || "/default-avatar.png");
 const username = computed(() => props.user?.username || "匿名用户");
@@ -44,7 +46,10 @@ const handleFollow = () => {
 };
 
 const handleMessage = () => {
-  // 预留：私信功能后续实现
+  if (isSelfAuthor.value) return;
+  const uid = props.user?.id;
+  if (!uid) return;
+  chatStore.openChatWithUser(uid);
 };
 </script>
 

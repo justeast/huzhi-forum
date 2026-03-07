@@ -22,6 +22,7 @@ import UserFollowList from "../components/UserFollowList.vue";
 import CollectionAnswerDrawer from "../components/CollectionAnswerDrawer.vue";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
+import { useChatStore } from "../stores/chat";
 import { useExpandTransition } from "../composables/useExpandTransition";
 import {
   fetchOtherUserProfile,
@@ -55,6 +56,7 @@ const router = useRouter();
 const route = useRoute();
 const authStore = useAuthStore();
 const topicFollowStore = useTopicFollowStore();
+const chatStore = useChatStore();
 
 const selfUserId = computed(() => String(authStore.userId || "").trim());
 const routeUserId = computed(() => String(route.params?.id || "").trim());
@@ -817,7 +819,10 @@ const handleToggleFollowUser = async () => {
 };
 
 const handleMessageUser = () => {
-  message.info("私信功能开发中");
+  if (!isOtherProfile.value) return;
+  const uid = String(targetUserId.value || "").trim();
+  if (!uid) return;
+  chatStore.openChatWithUser(uid);
 };
 
 const applyAchievements = (data) => {

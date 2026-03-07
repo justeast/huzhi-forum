@@ -1,7 +1,8 @@
 <template>
   <router-view />
+  <ChatDrawer />
 </template>
 
 <script setup>
-// 入口组件仅承载路由视图
+import ChatDrawer from "./components/ChatDrawer.vue";
 </script>

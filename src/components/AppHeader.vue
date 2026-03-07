@@ -11,6 +11,8 @@ import {
   UserOutlined,
 } from "@ant-design/icons-vue";
 import { useAuthStore } from "../stores/auth";
+import { useChatStore } from "../stores/chat";
+import { storeToRefs } from "pinia";
 import AskQuestionModal from "./AskQuestionModal.vue";
 
 const props = defineProps({
@@ -22,6 +24,8 @@ const emit = defineEmits(["update:modelValue", "search"]);
 
 const router = useRouter();
 const authStore = useAuthStore();
+const chatStore = useChatStore();
+const { totalUnread } = storeToRefs(chatStore);
 
 const askModalOpen = ref(false);
 
@@ -61,6 +65,15 @@ const handleLogout = () => {
   authStore.logout();
   router.push("/auth");
   message.success("已退出登录");
+};
+
+const handleOpenChatDrawer = () => {
+  if (!authStore.isLoggedIn) {
+    router.push("/auth");
+    message.warning("请先登录");
+    return;
+  }
+  chatStore.openDrawer();
 };
 </script>
 
@@ -105,10 +118,17 @@ const handleLogout = () => {
           </template>
         </a-dropdown>
 
-        <div class="msg">
-          <MessageOutlined class="msg-icon" />
-          <span class="msg-text">私信</span>
-        </div>
+        <a-badge
+          :count="totalUnread"
+          :overflowCount="99"
+          :offset="[0, 6]"
+          :showZero="false"
+        >
+          <button class="msg" type="button" @click="handleOpenChatDrawer">
+            <MessageOutlined class="msg-icon" />
+            <span class="msg-text">私信</span>
+          </button>
+        </a-badge>
 
         <a-dropdown :trigger="['click']" placement="bottomRight">
           <div class="avatar-wrap">
@@ -226,11 +246,20 @@ const handleLogout = () => {
   align-items: center;
   line-height: 1.1;
   color: #94a3b8;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
 }
 
 .msg-icon {
   font-size: 22px;
   color: #9aa5b1;
+}
+
+.msg:hover .msg-icon,
+.msg:hover .msg-text {
+  color: var(--brand-color);
 }
 
 .msg-text {
