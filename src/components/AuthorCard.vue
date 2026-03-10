@@ -18,7 +18,6 @@ const props = defineProps({
 });
 
 const emit = defineEmits(["user-click", "follow-toggle"]);
-const chatStore = useChatStore();
 
 const avatarUrl = computed(() => props.user?.avatar || "/default-avatar.png");
 const username = computed(() => props.user?.username || "匿名用户");
@@ -49,6 +48,7 @@ const handleMessage = () => {
   if (isSelfAuthor.value) return;
   const uid = props.user?.id;
   if (!uid) return;
+  const chatStore = useChatStore();
   chatStore.openChatWithUser(uid);
 };
 </script>

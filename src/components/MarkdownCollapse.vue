@@ -10,20 +10,18 @@ const props = defineProps({
   collapseText: { type: String, default: "收起" },
   defaultCollapsed: { type: Boolean, default: true },
   hideImagesWhenCollapsed: { type: Boolean, default: true },
-  // 受控展开态：用于父组件（如回答区）在展开后切换 UI（例如隐藏底部操作区、显示 sticky 操作栏）
+  // 受控展开态：用于父组件在外部同步展开/收起状态
   expanded: { type: Boolean, default: undefined },
-  // 展开后是否展示 sticky 收起栏
+  // 展开后是否展示底部固定收起栏
   stickyWhenExpanded: { type: Boolean, default: true },
 });
 
 const emit = defineEmits(["update:expanded"]);
 
 const innerExpanded = ref(!props.defaultCollapsed);
-const overflowing = ref(false);
 const rootRef = ref(null);
 const bodyRef = ref(null);
 const endRef = ref(null);
-let ro = null;
 let rafId = null;
 let ioRoot = null;
 let ioEnd = null;
@@ -47,7 +45,23 @@ const imageCount = computed(() => {
   return matches?.length || 0;
 });
 
-const shouldShowToggle = computed(() => hasImages.value || overflowing.value);
+const textLineCount = computed(() =>
+  normalizedContent.value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean).length,
+);
+
+const plainTextLength = computed(() =>
+  normalizedContent.value
+    .replace(/!\[[^\]]*]\([^)\s]+[^)]*\)/g, "")
+    .replace(/[`>#*\-_[\]()]/g, "")
+    .trim().length,
+);
+
+const shouldShowToggle = computed(
+  () => hasImages.value || textLineCount.value > 5 || plainTextLength.value > 180,
+);
 
 const isCollapsed = computed(
   () => shouldShowToggle.value && !isExpanded.value && props.defaultCollapsed,
@@ -56,9 +70,9 @@ const isCollapsed = computed(
 const shouldShowStickyBar = computed(
   () =>
     props.stickyWhenExpanded &&
+    props.defaultCollapsed &&
     shouldShowToggle.value &&
-    isExpanded.value &&
-    props.defaultCollapsed,
+    isExpanded.value,
 );
 
 const showFixedBar = computed(
@@ -89,11 +103,13 @@ const bodyStyle = computed(() => {
   };
 });
 
-const measureOverflow = async () => {
-  await nextTick();
-  const el = bodyRef.value;
-  if (!el) return;
-  overflowing.value = el.scrollHeight > props.collapsedHeight + 1;
+const disconnectStickyObservers = () => {
+  if (ioRoot) ioRoot.disconnect();
+  ioRoot = null;
+  if (ioEnd) ioEnd.disconnect();
+  ioEnd = null;
+  rootInView.value = true;
+  endInView.value = false;
 };
 
 const updateStickyRect = () => {
@@ -112,6 +128,7 @@ const updateStickyRect = () => {
 };
 
 const scheduleStickyUpdate = async () => {
+  if (!shouldShowStickyBar.value) return;
   await nextTick();
   if (rafId) cancelAnimationFrame(rafId);
   rafId = requestAnimationFrame(() => {
@@ -121,8 +138,42 @@ const scheduleStickyUpdate = async () => {
 };
 
 const handleWindowResize = () => {
-  if (!showFixedBar.value) return;
+  if (!shouldShowStickyBar.value) return;
   scheduleStickyUpdate();
+};
+
+const ensureStickyObservers = () => {
+  if (!shouldShowStickyBar.value) return;
+  if (typeof IntersectionObserver === "undefined") return;
+  if (!rootRef.value || !endRef.value) return;
+  if (ioRoot || ioEnd) return;
+
+  ioRoot = new IntersectionObserver(
+    (entries) => {
+      rootInView.value = Boolean(entries?.[0]?.isIntersecting);
+    },
+    { root: null, threshold: 0 },
+  );
+  ioRoot.observe(rootRef.value);
+
+  ioEnd = new IntersectionObserver(
+    (entries) => {
+      endInView.value = Boolean(entries?.[0]?.isIntersecting);
+    },
+    { root: null, threshold: 0 },
+  );
+  ioEnd.observe(endRef.value);
+};
+
+const syncStickyState = async () => {
+  if (!shouldShowStickyBar.value) {
+    window.removeEventListener("resize", handleWindowResize);
+    disconnectStickyObservers();
+    return;
+  }
+  window.addEventListener("resize", handleWindowResize);
+  ensureStickyObservers();
+  await scheduleStickyUpdate();
 };
 
 const toggle = async () => {
@@ -134,82 +185,33 @@ const toggle = async () => {
     innerExpanded.value = next;
     emit("update:expanded", next);
   }
-  await measureOverflow();
-  if (next) {
-    await scheduleStickyUpdate();
-  }
+  await syncStickyState();
 };
 
 watch(
   () => props.content,
-  async () => {
-    // 内容变化时，按默认规则回到折叠态
+  () => {
     if (typeof props.expanded !== "boolean") {
       innerExpanded.value = !props.defaultCollapsed;
     }
-    await measureOverflow();
   },
   { immediate: true },
 );
 
 watch(
   shouldShowStickyBar,
-  async (val) => {
-    if (val) {
-      window.addEventListener("resize", handleWindowResize);
-      await scheduleStickyUpdate();
-      return;
-    }
-    window.removeEventListener("resize", handleWindowResize);
+  async () => {
+    await syncStickyState();
   },
-  { immediate: true },
+  { immediate: true, flush: "post" },
 );
 
 onMounted(async () => {
-  await measureOverflow();
-  await scheduleStickyUpdate();
-
-  // 进入/离开视口 & 是否读到末尾：用于控制固定栏显示/隐藏
-  if (typeof IntersectionObserver !== "undefined") {
-    if (rootRef.value) {
-      ioRoot = new IntersectionObserver(
-        (entries) => {
-          rootInView.value = Boolean(entries?.[0]?.isIntersecting);
-        },
-        { root: null, threshold: 0 },
-      );
-      ioRoot.observe(rootRef.value);
-    }
-
-    if (endRef.value) {
-      ioEnd = new IntersectionObserver(
-        (entries) => {
-          endInView.value = Boolean(entries?.[0]?.isIntersecting);
-        },
-        {
-          root: null,
-          threshold: 0,
-        },
-      );
-      ioEnd.observe(endRef.value);
-    }
-  }
-
-  if (!bodyRef.value) return;
-  ro = new ResizeObserver(() => {
-    measureOverflow();
-    scheduleStickyUpdate();
-  });
-  ro.observe(bodyRef.value);
+  await syncStickyState();
 });
 
 onBeforeUnmount(() => {
-  if (ro) ro.disconnect();
-  ro = null;
-  if (ioRoot) ioRoot.disconnect();
-  ioRoot = null;
-  if (ioEnd) ioEnd.disconnect();
-  ioEnd = null;
+  disconnectStickyObservers();
   window.removeEventListener("resize", handleWindowResize);
   if (rafId) cancelAnimationFrame(rafId);
   rafId = null;

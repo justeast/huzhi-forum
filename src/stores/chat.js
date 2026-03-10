@@ -4,6 +4,7 @@ import { message as antdMessage } from "ant-design-vue";
 import { useWebSocket } from "@vueuse/core";
 import router from "../router";
 import { useAuthStore } from "./auth";
+import { useNotificationStore } from "./notification";
 import { createOrGetChat, fetchChatList, fetchChatMessages, markChatRead } from "../api/chat";
 import { fetchUserCard } from "../api/user";
 
@@ -40,6 +41,7 @@ const isSameId = (a, b) => normalizeUserId(a) && normalizeUserId(a) === normaliz
 
 export const useChatStore = defineStore("chat", () => {
   const authStore = useAuthStore();
+  const notificationStore = useNotificationStore();
 
   const drawerOpen = ref(false);
   const activeChatId = ref("");
@@ -67,6 +69,7 @@ export const useChatStore = defineStore("chat", () => {
   const wsUrl = computed(() =>
     buildChatWsUrl(import.meta.env.VITE_API_BASE, authStore.accessToken),
   );
+  const socketUrl = ref("");
 
   const closeDrawer = () => {
     drawerOpen.value = false;
@@ -162,6 +165,11 @@ export const useChatStore = defineStore("chat", () => {
       return;
     }
 
+    if (type === "notification") {
+      notificationStore.receiveWsNotification(payload?.notification);
+      return;
+    }
+
     // 错误：{ type:"error", code, message }
     if (type === "error") {
       const code = Number(payload?.code || 0);
@@ -183,14 +191,18 @@ export const useChatStore = defineStore("chat", () => {
     }
   };
 
+  const activeWsUrl = ref("");
+  let wsSyncTask = Promise.resolve();
+
   const {
     status: wsStatus,
     send: wsSend,
     open: wsOpen,
     close: wsClose,
     ws: wsRef,
-  } = useWebSocket(wsUrl, {
+  } = useWebSocket(socketUrl, {
     immediate: false,
+    autoConnect: false,
     autoReconnect: {
       retries: Infinity,
       delay: 1200,
@@ -201,6 +213,9 @@ export const useChatStore = defineStore("chat", () => {
       handleWsMessage(payload);
     },
     onDisconnected: (_ws, event) => {
+      // 连接断开后，清空当前已同步的目标地址，便于后续重新建立连接
+      activeWsUrl.value = "";
+
       // 4001：token 缺失/无效（后端 consumers.py）
       if (Number(event?.code) === 4001 && authStore.isLoggedIn) {
         try {
@@ -214,10 +229,18 @@ export const useChatStore = defineStore("chat", () => {
     },
   });
 
-  const connectWsIfNeeded = async () => {
+  const connectWsIfNeeded = async (targetUrl = wsUrl.value) => {
+    const nextUrl = String(targetUrl || "").trim();
     if (!authStore.isLoggedIn) return;
-    if (!wsUrl.value) return;
-    if (wsStatus.value === "OPEN" || wsStatus.value === "CONNECTING") return;
+    if (!nextUrl) return;
+    if (activeWsUrl.value === nextUrl) {
+      if (wsStatus.value === "OPEN" || wsStatus.value === "CONNECTING") return;
+    }
+
+    if (socketUrl.value !== nextUrl) {
+      socketUrl.value = nextUrl;
+    }
+    activeWsUrl.value = nextUrl;
     try {
       await wsOpen();
     } catch {
@@ -226,28 +249,60 @@ export const useChatStore = defineStore("chat", () => {
   };
 
   const closeWsIfNeeded = async () => {
+    if (wsStatus.value === "CLOSED" || wsStatus.value === "CLOSING") {
+      activeWsUrl.value = "";
+      socketUrl.value = "";
+      return;
+    }
     try {
       await wsClose();
     } catch {
       // ignore
+    } finally {
+      activeWsUrl.value = "";
+      socketUrl.value = "";
     }
   };
 
-  watch(
-    () => wsUrl.value,
-    async (next, prev) => {
-      if (next === prev) return;
-      await closeWsIfNeeded();
-      if (next) await connectWsIfNeeded();
-    },
-    { immediate: true },
-  );
+  const enqueueWsSync = (runner) => {
+    const task = wsSyncTask.finally(runner);
+    wsSyncTask = task.catch(() => {});
+    return task;
+  };
+
+  const syncWsState = async () =>
+    enqueueWsSync(async () => {
+      const desiredUrl = authStore.isLoggedIn ? String(wsUrl.value || "").trim() : "";
+
+      if (!desiredUrl) {
+        await closeWsIfNeeded();
+        return;
+      }
+
+      if (activeWsUrl.value && activeWsUrl.value !== desiredUrl) {
+        await closeWsIfNeeded();
+      }
+
+      await connectWsIfNeeded(desiredUrl);
+    });
+
+  const resetChatState = () => {
+    drawerOpen.value = false;
+    activeChatId.value = "";
+    chatList.value = [];
+    chatListPage.value = 1;
+    chatListHasMore.value = true;
+    messageStateMap.value = {};
+    chatMetaMap.value = {};
+  };
 
   watch(
-    () => authStore.isLoggedIn,
-    async (loggedIn) => {
+    () => [authStore.isLoggedIn, wsUrl.value].join("|"),
+    async () => {
+      const loggedIn = authStore.isLoggedIn;
+      await syncWsState();
+
       if (loggedIn) {
-        await connectWsIfNeeded();
         // 预加载会话列表：用于导航栏未读 badge，避免必须打开抽屉才看到未读
         // 注意：loadChatList 在文件后方声明，这里用 microtask 延后执行以避免 TDZ
         queueMicrotask(() => {
@@ -261,14 +316,7 @@ export const useChatStore = defineStore("chat", () => {
       }
 
       // 退出登录：清理所有私信状态
-      await closeWsIfNeeded();
-      drawerOpen.value = false;
-      activeChatId.value = "";
-      chatList.value = [];
-      chatListPage.value = 1;
-      chatListHasMore.value = true;
-      messageStateMap.value = {};
-      chatMetaMap.value = {};
+      resetChatState();
     },
     { immediate: true },
   );

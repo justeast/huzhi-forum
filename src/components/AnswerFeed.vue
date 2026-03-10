@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import {
   CommentOutlined,
   DislikeFilled,
@@ -29,9 +29,13 @@ const emit = defineEmits(["load-more", "vote", "collect", "user-click"]);
 
 const openCommentAnswerId = ref(null);
 const expandedMap = reactive({});
+const highlightedAnswerId = ref("");
 
 const sentinelRef = ref(null);
+const answerRowRefMap = new Map();
+const commentSectionRefMap = new Map();
 let observer = null;
+let answerHighlightTimer = null;
 
 const showEmpty = computed(() => !props.loading && props.answers.length === 0);
 
@@ -67,6 +71,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (observer) observer.disconnect();
   observer = null;
+  if (answerHighlightTimer) {
+    clearTimeout(answerHighlightTimer);
+    answerHighlightTimer = null;
+  }
 });
 
 const isUpvoted = (status) => Number(status) === VOTE_STATUS.UPVOTE;
@@ -91,6 +99,63 @@ const handleCollect = (item) => {
   if (!item?.id) return;
   if (isCollecting(item.id)) return;
   emit("collect", item);
+};
+
+const setAnswerRowRef = (answerId, el) => {
+  const id = String(answerId || "");
+  if (!id) return;
+  if (el) {
+    answerRowRefMap.set(id, el);
+    return;
+  }
+  answerRowRefMap.delete(id);
+};
+
+const setCommentSectionRef = (answerId, instance) => {
+  const id = String(answerId || "");
+  if (!id) return;
+  if (instance) {
+    commentSectionRefMap.set(id, instance);
+    return;
+  }
+  commentSectionRefMap.delete(id);
+};
+
+const triggerAnswerHighlight = (answerId) => {
+  const id = String(answerId || "");
+  if (!id) return;
+  highlightedAnswerId.value = id;
+  if (answerHighlightTimer) clearTimeout(answerHighlightTimer);
+  answerHighlightTimer = setTimeout(() => {
+    if (highlightedAnswerId.value === id) highlightedAnswerId.value = "";
+    answerHighlightTimer = null;
+  }, 2200);
+};
+
+const scrollToAnswer = async (answerId, { highlight = true, behavior = "smooth" } = {}) => {
+  const id = String(answerId || "");
+  if (!id) return false;
+  await nextTick();
+  const el = answerRowRefMap.get(id);
+  if (!el) return false;
+  el.scrollIntoView({ behavior, block: "center" });
+  if (highlight) triggerAnswerHighlight(id);
+  return true;
+};
+
+const openCommentsForAnswer = async (answerId) => {
+  const id = String(answerId || "");
+  if (!id) return null;
+  openCommentAnswerId.value = id;
+  await nextTick();
+  await nextTick();
+  return commentSectionRefMap.get(id) || null;
+};
+
+const locateCommentInAnswer = async (answerId, commentId, parentCommentId) => {
+  const section = await openCommentsForAnswer(answerId);
+  if (!section?.locateComment) return false;
+  return section.locateComment(commentId, parentCommentId);
 };
 
 const handleToggleComment = (item) => {
@@ -125,6 +190,12 @@ const handleClickUser = (item) => {
   if (!uid) return;
   emit("user-click", uid);
 };
+
+defineExpose({
+  scrollToAnswer,
+  openCommentsForAnswer,
+  locateCommentInAnswer,
+});
 </script>
 
 <template>
@@ -133,7 +204,14 @@ const handleClickUser = (item) => {
       <a-empty v-if="showEmpty" :description="emptyText" />
 
       <div v-else class="list">
-        <div v-for="item in answers" :key="item.id" class="row">
+        <div
+          v-for="item in answers"
+          :key="item.id"
+          :ref="(el) => setAnswerRowRef(item?.id, el)"
+          class="row"
+          :class="{ highlighted: highlightedAnswerId === String(item?.id || '') }"
+          :data-answer-id="item?.id"
+        >
           <div class="head">
             <div
               class="avatar-link"
@@ -295,6 +373,7 @@ const handleClickUser = (item) => {
             class="comment-wrap"
           >
             <AnswerCommentSection
+              :ref="(instance) => setCommentSectionRef(item?.id, instance)"
               :answerId="item?.id"
               :answerAuthorId="item?.respondent?.id"
               :commentCount="item?.comment_count"
@@ -340,6 +419,11 @@ const handleClickUser = (item) => {
 
 .row:hover {
   background: rgba(120, 200, 65, 0.06);
+}
+
+.row.highlighted {
+  background: rgba(120, 200, 65, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(120, 200, 65, 0.2);
 }
 
 .head {

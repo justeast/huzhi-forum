@@ -1,5 +1,5 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { LikeFilled, LikeOutlined } from "@ant-design/icons-vue";
 import {
@@ -43,6 +43,13 @@ const rootComments = ref([]);
 const replyStateByParentId = ref({});
 const likeLoadingMap = ref({});
 const deleteLoadingMap = ref({});
+const commentSectionRef = ref(null);
+const highlightedCommentId = ref("");
+
+let rootLoadTask = null;
+let rootLoadMoreTask = null;
+const replyLoadTaskMap = new Map();
+const replyLoadMoreTaskMap = new Map();
 
 const inputRef = ref(null);
 const draft = ref("");
@@ -137,51 +144,73 @@ const probeReplyCountsForRoots = async (roots = []) => {
 };
 
 const loadRootComments = async ({ reset } = {}) => {
-  if (!props.answerId) return;
-  if (rootLoading.value) return;
+  if (!props.answerId) return null;
+  if (rootLoading.value && rootLoadTask) return rootLoadTask;
 
-  if (reset) {
-    rootNext.value = null;
-    rootComments.value = [];
-    replyStateByParentId.value = {};
-  }
+  const task = (async () => {
+    if (reset) {
+      rootNext.value = null;
+      rootComments.value = [];
+      replyStateByParentId.value = {};
+    }
 
-  rootLoading.value = true;
+    rootLoading.value = true;
+    try {
+      const data = await fetchCommentsByAnswer(props.answerId, {
+        page: 1,
+        size: props.pageSize,
+      });
+      rootNext.value = data?.next || null;
+      rootComments.value = normalizeRootList(data?.results || []);
+      await probeReplyCountsForRoots(rootComments.value);
+    } catch (error) {
+      if (error?.__handled401) return null;
+      message.error(error?.message || "获取评论失败");
+      return null;
+    } finally {
+      rootLoading.value = false;
+    }
+    return rootComments.value;
+  })();
+
+  rootLoadTask = task;
   try {
-    const data = await fetchCommentsByAnswer(props.answerId, {
-      page: 1,
-      size: props.pageSize,
-    });
-    rootNext.value = data?.next || null;
-    rootComments.value = normalizeRootList(data?.results || []);
-    await probeReplyCountsForRoots(rootComments.value);
-  } catch (error) {
-    if (error?.__handled401) return;
-    message.error(error?.message || "获取评论失败");
+    return await task;
   } finally {
-    rootLoading.value = false;
+    if (rootLoadTask === task) rootLoadTask = null;
   }
 };
 
 const loadMoreRootComments = async () => {
-  if (!rootNext.value) return;
-  if (rootLoadingMore.value) return;
+  if (!rootNext.value) return null;
+  if (rootLoadingMore.value && rootLoadMoreTask) return rootLoadMoreTask;
 
-  rootLoadingMore.value = true;
-  try {
-    const data = await fetchCommentPage(rootNext.value);
-    rootNext.value = data?.next || null;
+  const task = (async () => {
+    rootLoadingMore.value = true;
+    try {
+      const data = await fetchCommentPage(rootNext.value);
+      rootNext.value = data?.next || null;
 
-    const more = normalizeRootList(data?.results || []);
-    if (more.length > 0) {
-      rootComments.value = [...rootComments.value, ...more];
-      await probeReplyCountsForRoots(more);
+      const more = normalizeRootList(data?.results || []);
+      if (more.length > 0) {
+        rootComments.value = [...rootComments.value, ...more];
+        await probeReplyCountsForRoots(more);
+      }
+      return more;
+    } catch (error) {
+      if (error?.__handled401) return null;
+      message.error(error?.message || "加载更多评论失败");
+      return null;
+    } finally {
+      rootLoadingMore.value = false;
     }
-  } catch (error) {
-    if (error?.__handled401) return;
-    message.error(error?.message || "加载更多评论失败");
+  })();
+
+  rootLoadMoreTask = task;
+  try {
+    return await task;
   } finally {
-    rootLoadingMore.value = false;
+    if (rootLoadMoreTask === task) rootLoadMoreTask = null;
   }
 };
 
@@ -206,55 +235,199 @@ const ensureReplyState = (parentId) => {
 };
 
 const loadReplies = async (parentId, { reset } = {}) => {
-  if (!parentId) return;
+  if (!parentId) return null;
   const state = ensureReplyState(parentId);
-  if (!state) return;
-  if (state.loading) return;
+  if (!state) return null;
 
-  state.loading = true;
-  if (reset) {
-    state.items = [];
-    state.next = null;
-  }
+  const key = String(parentId || "");
+  if (state.loading && replyLoadTaskMap.get(key)) return replyLoadTaskMap.get(key);
 
+  const task = (async () => {
+    state.loading = true;
+    if (reset) {
+      state.items = [];
+      state.next = null;
+    }
+
+    try {
+      const data = await fetchCommentsByParent(parentId, {
+        page: 1,
+        size: props.pageSize,
+      });
+      state.next = data?.next || null;
+      state.count = Number(data?.count || 0);
+      state.items = data?.results || [];
+      state.checked = true;
+      return state.items;
+    } catch (error) {
+      if (error?.__handled401) return null;
+      message.error(error?.message || "获取回复失败");
+      return null;
+    } finally {
+      state.loading = false;
+      replyStateByParentId.value = { ...(replyStateByParentId.value || {}) };
+    }
+  })();
+
+  replyLoadTaskMap.set(key, task);
   try {
-    const data = await fetchCommentsByParent(parentId, {
-      page: 1,
-      size: props.pageSize,
-    });
-    state.next = data?.next || null;
-    state.count = Number(data?.count || 0);
-    state.items = data?.results || [];
-    state.checked = true;
-  } catch (error) {
-    if (error?.__handled401) return;
-    message.error(error?.message || "获取回复失败");
+    return await task;
   } finally {
-    state.loading = false;
-    replyStateByParentId.value = { ...(replyStateByParentId.value || {}) };
+    if (replyLoadTaskMap.get(key) === task) replyLoadTaskMap.delete(key);
   }
 };
 
 const loadMoreReplies = async (parentId) => {
-  if (!parentId) return;
+  if (!parentId) return null;
   const state = ensureReplyState(parentId);
-  if (!state?.next) return;
-  if (state.loadingMore) return;
+  if (!state?.next) return null;
 
-  state.loadingMore = true;
+  const key = String(parentId || "");
+  if (state.loadingMore && replyLoadMoreTaskMap.get(key)) {
+    return replyLoadMoreTaskMap.get(key);
+  }
+
+  const task = (async () => {
+    state.loadingMore = true;
+    try {
+      const data = await fetchCommentPage(state.next);
+      state.next = data?.next || null;
+      state.count = Number(data?.count || state.count || 0);
+      const more = data?.results || [];
+      if (more.length > 0) state.items = [...(state.items || []), ...more];
+      return more;
+    } catch (error) {
+      if (error?.__handled401) return null;
+      message.error(error?.message || "加载更多回复失败");
+      return null;
+    } finally {
+      state.loadingMore = false;
+      replyStateByParentId.value = { ...(replyStateByParentId.value || {}) };
+    }
+  })();
+
+  replyLoadMoreTaskMap.set(key, task);
   try {
-    const data = await fetchCommentPage(state.next);
-    state.next = data?.next || null;
-    state.count = Number(data?.count || state.count || 0);
-    const more = data?.results || [];
-    if (more.length > 0) state.items = [...(state.items || []), ...more];
-  } catch (error) {
-    if (error?.__handled401) return;
-    message.error(error?.message || "加载更多回复失败");
+    return await task;
   } finally {
-    state.loadingMore = false;
+    if (replyLoadMoreTaskMap.get(key) === task) replyLoadMoreTaskMap.delete(key);
+  }
+};
+
+const findRootComment = (commentId) => {
+  const id = String(commentId || "").trim();
+  if (!id) return null;
+  return (rootComments.value || []).find((item) => String(item?.id || "") === id) || null;
+};
+
+const findReplyComment = (commentId) => {
+  const id = String(commentId || "").trim();
+  if (!id) return null;
+
+  const map = replyStateByParentId.value || {};
+  for (const key of Object.keys(map)) {
+    const target = (map[key]?.items || []).find((item) => String(item?.id || "") === id);
+    if (target) return target;
+  }
+
+  return null;
+};
+
+let commentHighlightTimer = null;
+const triggerCommentHighlight = (commentId) => {
+  const id = String(commentId || "").trim();
+  if (!id) return;
+  highlightedCommentId.value = id;
+  if (commentHighlightTimer) clearTimeout(commentHighlightTimer);
+  commentHighlightTimer = setTimeout(() => {
+    if (highlightedCommentId.value === id) highlightedCommentId.value = "";
+    commentHighlightTimer = null;
+  }, 2200);
+};
+
+const scrollToCommentElement = async (commentId) => {
+  const id = String(commentId || "").trim();
+  if (!id) return false;
+  await nextTick();
+  const el = commentSectionRef.value?.querySelector?.(`[data-comment-id="${id}"]`);
+  if (!el) return false;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  triggerCommentHighlight(id);
+  return true;
+};
+
+const ensureRootCommentLoaded = async (commentId) => {
+  if (findRootComment(commentId)) return true;
+
+  if (rootLoading.value && rootLoadTask) {
+    await rootLoadTask;
+    if (findRootComment(commentId)) return true;
+  }
+
+  if ((rootComments.value || []).length === 0 && !rootLoading.value) {
+    await loadRootComments();
+    if (findRootComment(commentId)) return true;
+  }
+
+  while (rootNext.value) {
+    const previous = rootNext.value;
+    await loadMoreRootComments();
+    if (findRootComment(commentId)) return true;
+    if (rootNext.value === previous) break;
+  }
+
+  return Boolean(findRootComment(commentId));
+};
+
+const ensureReplyCommentLoaded = async (parentCommentId, commentId) => {
+  const parentId = String(parentCommentId || "").trim();
+  if (!parentId) return false;
+
+  const parent = findRootComment(parentId);
+  if (!parent) return false;
+
+  const state = ensureReplyState(parent.id);
+  if (!state) return false;
+
+  if (!state.open) {
+    state.open = true;
     replyStateByParentId.value = { ...(replyStateByParentId.value || {}) };
   }
+
+  if ((state.items || []).length === 0) {
+    await loadReplies(parent.id, { reset: true });
+  }
+
+  if (findReplyComment(commentId)) return true;
+
+  while (state.next) {
+    const previous = state.next;
+    await loadMoreReplies(parent.id);
+    if (findReplyComment(commentId)) return true;
+    if (state.next === previous) break;
+  }
+
+  return Boolean(findReplyComment(commentId));
+};
+
+const locateComment = async (commentId, parentCommentId) => {
+  const id = String(commentId || "").trim();
+  const parentId = String(parentCommentId || "").trim();
+  if (!id) return false;
+
+  if (parentId) {
+    const parentReady = await ensureRootCommentLoaded(parentId);
+    if (!parentReady) return false;
+
+    const replyReady = await ensureReplyCommentLoaded(parentId, id);
+    if (!replyReady) return false;
+
+    return scrollToCommentElement(id);
+  }
+
+  const rootReady = await ensureRootCommentLoaded(id);
+  if (!rootReady) return false;
+  return scrollToCommentElement(id);
 };
 
 const toggleReplyOpen = async (parentComment) => {
@@ -461,15 +634,26 @@ const handleDelete = async (comment) => {
   }
 };
 
+onBeforeUnmount(() => {
+  if (commentHighlightTimer) {
+    clearTimeout(commentHighlightTimer);
+    commentHighlightTimer = null;
+  }
+});
+
 onMounted(async () => {
   await loadRootComments({ reset: true });
   await nextTick();
   if (inputRef.value?.focus) inputRef.value.focus();
 });
+
+defineExpose({
+  locateComment,
+});
 </script>
 
 <template>
-  <div class="comment-section" @click.stop>
+  <div ref="commentSectionRef" class="comment-section" @click.stop>
     <div class="head">
       <div class="title">
         <span class="num">{{ Number(count || 0) }}</span>
@@ -514,7 +698,11 @@ onMounted(async () => {
 
         <a-list v-else :data-source="rootComments" class="root-list">
           <template #renderItem="{ item }">
-            <a-list-item class="root-item">
+            <a-list-item
+              class="root-item"
+              :class="{ highlighted: highlightedCommentId === String(item?.id || '') }"
+              :data-comment-id="item?.id"
+            >
               <div class="root">
                 <a-avatar :size="34" :src="getAvatar(item?.user)" />
 
@@ -602,6 +790,8 @@ onMounted(async () => {
                           v-for="r in replyStateByParentId?.[item?.id]?.items"
                           :key="r.id"
                           class="reply-item"
+                          :class="{ highlighted: highlightedCommentId === String(r?.id || '') }"
+                          :data-comment-id="r?.id"
                         >
                           <a-avatar :size="28" :src="getAvatar(r?.user)" />
 
@@ -900,10 +1090,17 @@ onMounted(async () => {
   gap: 10px;
 }
 
+.root-item.highlighted,
+.reply-item.highlighted {
+  background: rgba(120, 200, 65, 0.12);
+  border-radius: 10px;
+}
+
 .reply-item {
   display: flex;
   align-items: flex-start;
   gap: 10px;
+  padding: 4px 6px;
 }
 
 .reply-body {

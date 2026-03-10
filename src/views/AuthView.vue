@@ -225,13 +225,15 @@ const handleRegister = async () => {
           <a-tabs v-model:activeKey="activeTab" class="auth-tabs" centered>
             <a-tab-pane key="login" tab="登录">
               <div class="form-wrap">
-                <a-form layout="vertical" @submit.prevent>
+                <a-form layout="vertical" name="login-form" autocomplete="on" @submit.prevent>
                   <a-form-item>
-                    <a-input v-model:value="loginForm.account" placeholder="用户名或邮箱" size="large" :bordered="false"
+                    <a-input v-model:value="loginForm.account" id="login-account" name="account"
+                      autocomplete="username" placeholder="用户名或邮箱" size="large" :bordered="false"
                       class="underline-input" />
                   </a-form-item>
                   <a-form-item>
-                    <a-input v-model:value="loginForm.password" :type="loginPwdVisible ? 'text' : 'password'"
+                    <a-input v-model:value="loginForm.password" id="login-password" name="password"
+                      :type="loginPwdVisible ? 'text' : 'password'" autocomplete="current-password"
                       placeholder="密码" size="large" :bordered="false" class="underline-input">
                       <template #suffix>
                         <span class="pwd-toggle" :class="{ 'is-hidden': !loginPwdVisible }" @mousedown.prevent
@@ -242,15 +244,15 @@ const handleRegister = async () => {
                     </a-input>
                   </a-form-item>
                   <div class="row between">
-                    <a-checkbox v-model:checked="loginForm.remember">
+                    <a-checkbox v-model:checked="loginForm.remember" name="remember">
                       记住我
                     </a-checkbox>
                     <a-button type="link" class="link-plain" tabindex="-1" @click="openResetPanel">
                       忘记密码？
                     </a-button>
                   </div>
-                  <a-button block type="primary" size="large" :loading="loading" class="primary-btn"
-                    @click="handleLogin">
+                  <a-button block type="primary" html-type="submit" size="large" :loading="loading"
+                    class="primary-btn" @click="handleLogin">
                     登录
                   </a-button>
                 </a-form>
@@ -258,17 +260,19 @@ const handleRegister = async () => {
             </a-tab-pane>
             <a-tab-pane key="register" tab="注册">
               <div class="form-wrap">
-                <a-form layout="vertical" @submit.prevent>
+                <a-form layout="vertical" name="register-form" autocomplete="on" @submit.prevent>
                   <a-form-item>
-                    <a-input v-model:value="registerForm.username" placeholder="用户名" size="large" :bordered="false"
+                    <a-input v-model:value="registerForm.username" id="register-username" name="username"
+                      autocomplete="username" placeholder="用户名" size="large" :bordered="false"
                       class="underline-input" />
                   </a-form-item>
                   <a-form-item>
-                    <a-input v-model:value="registerForm.email" placeholder="邮箱" size="large" :bordered="false"
-                      class="underline-input" />
+                    <a-input v-model:value="registerForm.email" id="register-email" name="email"
+                      autocomplete="email" placeholder="邮箱" size="large" :bordered="false" class="underline-input" />
                   </a-form-item>
                   <a-form-item>
-                    <a-input v-model:value="registerForm.password" :type="registerPwdVisible ? 'text' : 'password'"
+                    <a-input v-model:value="registerForm.password" id="register-password" name="new-password"
+                      :type="registerPwdVisible ? 'text' : 'password'" autocomplete="new-password"
                       placeholder="密码" size="large" :bordered="false" class="underline-input">
                       <template #suffix>
                         <span class="pwd-toggle" :class="{ 'is-hidden': !registerPwdVisible }" @mousedown.prevent
@@ -280,9 +284,10 @@ const handleRegister = async () => {
                     <div class="field-tip">密码需包含大小写字母和数字，长度至少8位</div>
                   </a-form-item>
                   <a-form-item>
-                    <a-input v-model:value="registerForm.confirmPassword"
-                      :type="registerConfirmVisible ? 'text' : 'password'" placeholder="确认密码" size="large"
-                      :bordered="false" class="underline-input">
+                    <a-input v-model:value="registerForm.confirmPassword" id="register-confirm-password"
+                      name="confirm-password" :type="registerConfirmVisible ? 'text' : 'password'"
+                      autocomplete="new-password" placeholder="确认密码" size="large" :bordered="false"
+                      class="underline-input">
                       <template #suffix>
                         <span class="pwd-toggle" :class="{ 'is-hidden': !registerConfirmVisible }" @mousedown.prevent
                           @click.prevent="registerConfirmVisible = !registerConfirmVisible">
@@ -291,8 +296,8 @@ const handleRegister = async () => {
                       </template>
                     </a-input>
                   </a-form-item>
-                  <a-button block type="primary" size="large" :loading="loading" class="primary-btn"
-                    @click="handleRegister">
+                  <a-button block type="primary" html-type="submit" size="large" :loading="loading"
+                    class="primary-btn" @click="handleRegister">
                     注册
                   </a-button>
                 </a-form>
@@ -306,13 +311,14 @@ const handleRegister = async () => {
             <span>重置密码</span>
           </div>
           <div class="form-wrap">
-            <a-form layout="vertical" class="reset-form" @submit.prevent>
+            <a-form layout="vertical" name="reset-form" autocomplete="on" class="reset-form" @submit.prevent>
               <a-form-item>
-                <a-input v-model:value="resetForm.email" placeholder="请输入注册邮箱" size="large" :bordered="false"
-                  class="underline-input" />
+                <a-input v-model:value="resetForm.email" id="reset-email" name="email" autocomplete="email"
+                  placeholder="请输入注册邮箱" size="large" :bordered="false" class="underline-input" />
               </a-form-item>
               <a-form-item>
-                <a-input v-model:value="resetForm.code" placeholder="验证码" size="large" :bordered="false"
+                <a-input v-model:value="resetForm.code" id="reset-code" name="reset-code"
+                  autocomplete="one-time-code" placeholder="验证码" size="large" :bordered="false"
                   class="underline-input">
                   <template #suffix>
                     <a-button type="link" class="code-link" :disabled="codeSending || codeLeftSeconds > 0"
@@ -323,7 +329,8 @@ const handleRegister = async () => {
                 </a-input>
               </a-form-item>
               <a-form-item>
-                <a-input v-model:value="resetForm.newPassword" :type="resetPwdVisible ? 'text' : 'password'"
+                <a-input v-model:value="resetForm.newPassword" id="reset-new-password" name="new-password"
+                  :type="resetPwdVisible ? 'text' : 'password'" autocomplete="new-password"
                   placeholder="新密码" size="large" :bordered="false" class="underline-input">
                   <template #suffix>
                     <span class="pwd-toggle" :class="{ 'is-hidden': !resetPwdVisible }" @mousedown.prevent
@@ -335,8 +342,10 @@ const handleRegister = async () => {
                 <div class="field-tip">密码需包含大小写字母和数字，长度至少8位</div>
               </a-form-item>
               <a-form-item>
-                <a-input v-model:value="resetForm.confirmPassword" :type="resetConfirmVisible ? 'text' : 'password'"
-                  placeholder="确认新密码" size="large" :bordered="false" class="underline-input">
+                <a-input v-model:value="resetForm.confirmPassword" id="reset-confirm-password"
+                  name="confirm-new-password" :type="resetConfirmVisible ? 'text' : 'password'"
+                  autocomplete="new-password" placeholder="确认新密码" size="large" :bordered="false"
+                  class="underline-input">
                   <template #suffix>
                     <span class="pwd-toggle" :class="{ 'is-hidden': !resetConfirmVisible }" @mousedown.prevent
                       @click.prevent="resetConfirmVisible = !resetConfirmVisible">
@@ -350,8 +359,8 @@ const handleRegister = async () => {
                 返回登录
               </a-button>
 
-              <a-button block type="primary" size="large" :loading="resetLoading" class="primary-btn"
-                @click="handleResetPassword">
+              <a-button block type="primary" html-type="submit" size="large" :loading="resetLoading"
+                class="primary-btn" @click="handleResetPassword">
                 重置
               </a-button>
             </a-form>

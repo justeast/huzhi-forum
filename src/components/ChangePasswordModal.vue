@@ -125,11 +125,15 @@ const handleSubmit = async () => {
         <span>密码需包含大小写字母和数字，长度至少8位</span>
       </div>
 
-      <a-form layout="vertical" @submit.prevent>
-        <a-form-item label="旧密码">
+      <a-form layout="vertical" name="change-password-form" autocomplete="on" @submit.prevent>
+        <a-form-item label="旧密码" htmlFor="change-password-old">
           <a-input
             v-model:value="form.oldPassword"
+            id="change-password-old"
+            name="current-password"
             :type="oldPwdVisible ? 'text' : 'password'"
+            autocomplete="current-password"
+            aria-label="旧密码"
             placeholder="请输入旧密码"
             :disabled="submitting"
             size="large"
@@ -149,10 +153,14 @@ const handleSubmit = async () => {
           </a-input>
         </a-form-item>
 
-        <a-form-item label="新密码">
+        <a-form-item label="新密码" htmlFor="change-password-new">
           <a-input
             v-model:value="form.newPassword"
+            id="change-password-new"
+            name="new-password"
             :type="newPwdVisible ? 'text' : 'password'"
+            autocomplete="new-password"
+            aria-label="新密码"
             placeholder="请输入新密码"
             :disabled="submitting"
             size="large"
@@ -172,10 +180,14 @@ const handleSubmit = async () => {
           </a-input>
         </a-form-item>
 
-        <a-form-item label="确认新密码">
+        <a-form-item label="确认新密码" htmlFor="change-password-confirm">
           <a-input
             v-model:value="form.confirmPassword"
+            id="change-password-confirm"
+            name="confirm-new-password"
             :type="confirmVisible ? 'text' : 'password'"
+            autocomplete="new-password"
+            aria-label="确认新密码"
             placeholder="请再次输入新密码"
             :disabled="submitting"
             size="large"

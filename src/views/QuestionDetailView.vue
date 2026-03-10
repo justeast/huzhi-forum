@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { DownOutlined, UserAddOutlined } from "@ant-design/icons-vue";
 import { useRoute, useRouter } from "vue-router";
@@ -40,6 +40,9 @@ const handleHeaderSearch = () => {
 const APP_HEADER_HEIGHT = 64;
 
 const questionId = computed(() => String(route.params?.id || ""));
+const routeAnswerId = computed(() => String(route.query?.answer || "").trim());
+const routeCommentId = computed(() => String(route.query?.comment || "").trim());
+const routeParentCommentId = computed(() => String(route.query?.parent || "").trim());
 
 const question = ref(null);
 const questionLoading = ref(false);
@@ -91,7 +94,10 @@ const showStickyBar = computed(
 );
 
 const composerRef = ref(null);
+const answerFeedRef = ref(null);
 const hasAnswerDraft = ref(false);
+const routeLocateKey = ref("");
+const locatingFromRoute = ref(false);
 
 const readAnswerDraftFlag = (qid) => {
   const id = String(qid || "").trim();
@@ -121,6 +127,16 @@ const writeAnswerLabel = computed(() =>
 
 const openComposerAndScroll = () => {
   composerRef.value?.openAndScroll?.();
+};
+
+const clearLocateQuery = async () => {
+  if (!routeAnswerId.value && !routeCommentId.value && !routeParentCommentId.value) return;
+
+  const nextQuery = { ...(route.query || {}) };
+  delete nextQuery.answer;
+  delete nextQuery.comment;
+  delete nextQuery.parent;
+  await router.replace({ path: route.path, query: nextQuery });
 };
 
 const handleClickUserProfile = (userId) => {
@@ -230,8 +246,13 @@ const mergeById = (items, incoming) => {
   return Array.from(map.values());
 };
 
-const getAnswerById = (answerId) =>
-  (answers.value || []).find((x) => x?.id === answerId) || null;
+const getAnswerById = (answerId) => {
+  const id = String(answerId || "").trim();
+  if (!id) return null;
+  return (
+    (answers.value || []).find((item) => String(item?.id || "") === id) || null
+  );
+};
 
 const collectingAnswer = computed(() => getAnswerById(collectingAnswerId.value));
 
@@ -311,10 +332,10 @@ const loadQuestionAndAnswers = async (id) => {
 };
 
 const loadMoreAnswers = async () => {
-  if (answerLoading.value || answerLoadingMore.value) return;
-  if (!answerHasMore.value) return;
+  if (answerLoading.value || answerLoadingMore.value) return false;
+  if (!answerHasMore.value) return false;
   const id = questionId.value;
-  if (!id) return;
+  if (!id) return false;
 
   answerLoadingMore.value = true;
   const page = answerPage.value + 1;
@@ -329,9 +350,11 @@ const loadMoreAnswers = async () => {
     answers.value = mergeById(answers.value, results);
     answerHasMore.value = Boolean(data?.next);
     answerPage.value = page;
+    return true;
   } catch (error) {
-    if (error?.__handled401) return;
+    if (error?.__handled401) return false;
     message.error(error?.message || "加载更多回答失败");
+    return false;
   } finally {
     answerLoadingMore.value = false;
   }
@@ -679,8 +702,90 @@ watch(
 watch(
   questionId,
   (id) => {
+    routeLocateKey.value = "";
+    locatingFromRoute.value = false;
     if (!id) return;
     loadQuestionAndAnswers(id);
+  },
+  { immediate: true },
+);
+
+const ensureAnswerLoadedForRoute = async (answerId) => {
+  const id = String(answerId || "").trim();
+  if (!id) return false;
+  if (getAnswerById(id)) return true;
+
+  while (answerHasMore.value) {
+    const previousPage = Number(answerPage.value || 1);
+    const loaded = await loadMoreAnswers();
+    if (getAnswerById(id)) return true;
+    if (!loaded) break;
+    if (Number(answerPage.value || 1) === previousPage) break;
+  }
+
+  return Boolean(getAnswerById(id));
+};
+
+const locateTargetFromRoute = async () => {
+  const answerId = routeAnswerId.value;
+  if (!answerId) return;
+
+  const key = [
+    questionId.value,
+    answerId,
+    routeCommentId.value,
+    routeParentCommentId.value,
+  ].join("|");
+
+  if (!key) return;
+  if (locatingFromRoute.value) return;
+  if (routeLocateKey.value === key) return;
+
+  locatingFromRoute.value = true;
+  try {
+    const answerReady = await ensureAnswerLoadedForRoute(answerId);
+    if (!answerReady) {
+      message.info("目标回答不存在或暂不可见");
+      routeLocateKey.value = key;
+      await clearLocateQuery();
+      return;
+    }
+
+    await nextTick();
+    await answerFeedRef.value?.scrollToAnswer?.(answerId, { highlight: true });
+
+    if (routeCommentId.value) {
+      const located = await answerFeedRef.value?.locateCommentInAnswer?.(
+        answerId,
+        routeCommentId.value,
+        routeParentCommentId.value,
+      );
+      if (!located) {
+        message.info("目标评论不存在或暂不可见");
+      }
+    }
+
+    routeLocateKey.value = key;
+    await clearLocateQuery();
+  } finally {
+    locatingFromRoute.value = false;
+  }
+};
+
+watch(
+  () => [
+    questionId.value,
+    routeAnswerId.value,
+    routeCommentId.value,
+    routeParentCommentId.value,
+    questionLoading.value,
+    answerLoading.value,
+  ].join("|"),
+  async () => {
+    if (!questionId.value) return;
+    if (!routeAnswerId.value) return;
+    if (questionLoading.value || answerLoading.value) return;
+    await locateTargetFromRoute();
   },
   { immediate: true },
 );
@@ -784,6 +889,7 @@ const answerTotalText = computed(() => {
 
           <div class="answers-body">
             <AnswerFeed
+              ref="answerFeedRef"
               :answers="answers"
               :loading="answerLoading"
               :loadingMore="answerLoadingMore"
@@ -804,15 +910,16 @@ const answerTotalText = computed(() => {
             <div class="side-title">关于作者</div>
             <div v-if="firstAnswer" class="side-body">
               <AuthorCard
+                v-if="author || authorLoading"
                 :user="author"
                 :loading="authorLoading"
                 :enable-user-link="true"
-                :selfUserId="authStore.userId"
-                :followLoading="authorFollowLoading"
-                :disableFollow="String(author?.id || '') === String(authStore.userId || '')"
+                :self-user-id="String(authStore.userId || '')"
+                :follow-loading="authorFollowLoading"
                 @user-click="handleClickUserProfile"
                 @follow-toggle="handleToggleAuthorFollow"
               />
+              <a-empty v-else description="暂无作者信息" />
             </div>
             <a-empty v-else description="暂无回答" />
           </a-card>
@@ -1152,6 +1259,10 @@ const answerTotalText = computed(() => {
 
 .side-card + .side-card {
   margin-top: 14px;
+}
+
+.side-body {
+  padding: 0;
 }
 
 .side-title {

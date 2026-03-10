@@ -3,17 +3,19 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "ant-design-vue";
 import {
+  BellOutlined,
   HomeOutlined,
-  LogoutOutlined,
   LockOutlined,
+  LogoutOutlined,
   MessageOutlined,
-  SearchOutlined,
   PlusOutlined,
+  SearchOutlined,
   UserOutlined,
 } from "@ant-design/icons-vue";
+import { storeToRefs } from "pinia";
 import { useAuthStore } from "../stores/auth";
 import { useChatStore } from "../stores/chat";
-import { storeToRefs } from "pinia";
+import { useNotificationStore } from "../stores/notification";
 import AskQuestionModal from "./AskQuestionModal.vue";
 import ChangePasswordModal from "./ChangePasswordModal.vue";
 
@@ -27,7 +29,9 @@ const emit = defineEmits(["update:modelValue", "search"]);
 const router = useRouter();
 const authStore = useAuthStore();
 const chatStore = useChatStore();
+const notificationStore = useNotificationStore();
 const { totalUnread } = storeToRefs(chatStore);
+const { unreadCount } = storeToRefs(notificationStore);
 
 const askModalOpen = ref(false);
 const changePwdOpen = ref(false);
@@ -36,9 +40,9 @@ const keyword = computed({
   get: () => props.modelValue,
   set: (value) => emit("update:modelValue", value),
 });
+
 const avatarUrl = computed(() => authStore.avatarUrl);
 
-// 搜索：由父组件决定具体业务（当前首页复用为话题搜索）
 const handleSearch = () => {
   const value = (keyword.value || "").trim();
   if (!value) {
@@ -46,6 +50,13 @@ const handleSearch = () => {
     return;
   }
   emit("search", value);
+};
+
+const ensureLoggedIn = () => {
+  if (authStore.isLoggedIn) return true;
+  router.push("/auth");
+  message.warning("请先登录");
+  return false;
 };
 
 const handleCreateQuestion = () => {
@@ -74,12 +85,13 @@ const handleOpenChangePassword = () => {
   changePwdOpen.value = true;
 };
 
+const handleOpenNotificationDrawer = () => {
+  if (!ensureLoggedIn()) return;
+  notificationStore.openDrawer();
+};
+
 const handleOpenChatDrawer = () => {
-  if (!authStore.isLoggedIn) {
-    router.push("/auth");
-    message.warning("请先登录");
-    return;
-  }
+  if (!ensureLoggedIn()) return;
   chatStore.openDrawer();
 };
 </script>
@@ -97,6 +109,7 @@ const handleOpenChatDrawer = () => {
           class="search"
           size="large"
           allow-clear
+          name="site-search"
           :placeholder="props.searchPlaceholder"
           @pressEnter="handleSearch"
         >
@@ -126,6 +139,18 @@ const handleOpenChatDrawer = () => {
         </a-dropdown>
 
         <a-badge
+          :count="unreadCount"
+          :overflowCount="99"
+          :offset="[0, 6]"
+          :showZero="false"
+        >
+          <button class="msg" type="button" @click="handleOpenNotificationDrawer">
+            <BellOutlined class="msg-icon" />
+            <span class="msg-text">通知</span>
+          </button>
+        </a-badge>
+
+        <a-badge
           :count="totalUnread"
           :overflowCount="99"
           :offset="[0, 6]"
@@ -145,9 +170,7 @@ const handleOpenChatDrawer = () => {
             <a-menu class="header-menu header-user-menu">
               <a-menu-item disabled>
                 <UserOutlined />
-                <span class="menu-text">{{
-                  authStore.username || "未登录用户"
-                  }}</span>
+                <span class="menu-text">{{ authStore.username || "未登录用户" }}</span>
               </a-menu-item>
               <a-menu-divider />
               <a-menu-item key="profile" @click="handleGotoProfile">
