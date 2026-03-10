@@ -1,10 +1,8 @@
 <script setup>
 import { computed, ref } from "vue";
-import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
 import {
   LikeFilled,
-  PlusOutlined,
   UserAddOutlined,
 } from "@ant-design/icons-vue";
 import MarkdownCollapse from "./MarkdownCollapse.vue";
@@ -45,10 +43,6 @@ const handleFollowQuestion = () => {
   if (!props.question) return;
   if (props.followLoading) return;
   emit("follow-question");
-};
-
-const handleInviteAnswer = () => {
-  message.info("邀请回答功能开发中");
 };
 
 const handleQuestionUpvote = () => {
@@ -208,11 +202,6 @@ const handleClickTopic = (topic) => {
               <UserAddOutlined />
               <span>{{ question.is_following ? "已关注问题" : "关注问题" }}</span>
             </button>
-            <button class="btn ghost" type="button" @click="handleInviteAnswer">
-              <PlusOutlined />
-              <span>邀请回答</span>
-            </button>
-
             <button
               class="btn like"
               type="button"
@@ -493,16 +482,6 @@ const handleClickTopic = (topic) => {
 .btn.outline:hover {
   border-color: var(--brand-color);
   background: rgba(120, 200, 65, 0.1);
-}
-
-.btn.ghost {
-  border-color: transparent;
-  color: #334155;
-  background: transparent;
-}
-
-.btn.ghost:hover {
-  color: var(--brand-color);
 }
 
 .btn.like {
