@@ -17,6 +17,7 @@ const router = useRouter();
 const authStore = useAuthStore();
 
 const searchInputRef = ref(null);
+const scrollContainerRef = ref(null);
 const keyword = ref("");
 const list = ref([]);
 const page = ref(1);
@@ -57,6 +58,8 @@ const resetState = () => {
 const close = () => {
   emit("update:open", false);
 };
+
+const getScrollTarget = () => scrollContainerRef.value;
 
 const mergeById = (source, incoming) => {
   const map = new Map();
@@ -196,59 +199,67 @@ onBeforeUnmount(() => {
         </span>
       </div>
 
-      <a-spin :spinning="loading">
-        <a-list
-          class="picker-list"
-          item-layout="vertical"
-          :data-source="list"
-          :locale="{ emptyText }"
-        >
-          <template #renderItem="{ item }">
-            <a-list-item class="picker-item">
-              <div class="picker-card">
-                <div class="picker-main">
-                  <button
-                    class="question-title"
-                    type="button"
-                    :title="item?.title || ''"
-                    @click="handleAnswer(item?.id)"
-                  >
-                    {{ item?.title || "未命名问题" }}
-                  </button>
-
-                  <div class="question-meta">
+      <div ref="scrollContainerRef" class="picker-scroll">
+        <a-spin :spinning="loading">
+          <a-list
+            class="picker-list"
+            item-layout="vertical"
+            :data-source="list"
+            :locale="{ emptyText }"
+          >
+            <template #renderItem="{ item }">
+              <a-list-item class="picker-item">
+                <div class="picker-card">
+                  <div class="picker-main">
                     <button
-                      class="questioner"
+                      class="question-title"
                       type="button"
-                      @click.stop="handleUserClick(item?.questioner?.id)"
+                      :title="item?.title || ''"
+                      @click="handleAnswer(item?.id)"
                     >
-                      <a-avatar :src="item?.questioner?.avatar || defaultAvatar" :size="32" />
-                      <span class="questioner-name">{{ item?.questioner?.username || "未知用户" }}</span>
+                      {{ item?.title || "未命名问题" }}
                     </button>
 
-                    <span class="meta-text">{{ formatCount(item?.answer_count) }} 个回答</span>
-                    <span class="meta-text">{{ formatCount(item?.follower_count) }} 人关注</span>
-                    <span class="meta-text">{{ formatDateTimeMinute(item?.created) }}</span>
+                    <div class="question-meta">
+                      <button
+                        class="questioner"
+                        type="button"
+                        @click.stop="handleUserClick(item?.questioner?.id)"
+                      >
+                        <a-avatar :src="item?.questioner?.avatar || defaultAvatar" :size="32" />
+                        <span class="questioner-name">{{ item?.questioner?.username || "未知用户" }}</span>
+                      </button>
+
+                      <span class="meta-text">{{ formatCount(item?.answer_count) }} 个回答</span>
+                      <span class="meta-text">{{ formatCount(item?.follower_count) }} 人关注</span>
+                      <span class="meta-text">{{ formatDateTimeMinute(item?.created) }}</span>
+                    </div>
+
+                    <div v-if="item?.topics?.length" class="topic-list">
+                      <a-tag v-for="topic in item.topics" :key="topic.id" class="topic-tag">
+                        {{ topic.name }}
+                      </a-tag>
+                    </div>
                   </div>
 
-                  <div v-if="item?.topics?.length" class="topic-list">
-                    <a-tag v-for="topic in item.topics" :key="topic.id" class="topic-tag">
-                      {{ topic.name }}
-                    </a-tag>
+                  <div class="picker-side">
+                    <a-button type="primary" @click="handleAnswer(item?.id)">回答</a-button>
                   </div>
                 </div>
+              </a-list-item>
+            </template>
+          </a-list>
+        </a-spin>
 
-                <div class="picker-side">
-                  <a-button type="primary" @click="handleAnswer(item?.id)">回答</a-button>
-                </div>
-              </div>
-            </a-list-item>
-          </template>
-        </a-list>
-      </a-spin>
+        <div v-if="hasMore && list.length" class="picker-more">
+          <a-button :loading="loadingMore" @click="handleLoadMore">加载更多</a-button>
+        </div>
 
-      <div v-if="hasMore && list.length" class="picker-more">
-        <a-button :loading="loadingMore" @click="handleLoadMore">加载更多</a-button>
+        <a-back-top
+          class="picker-back-top"
+          :visibilityHeight="240"
+          :target="getScrollTarget"
+        />
       </div>
     </div>
   </a-modal>
@@ -290,6 +301,13 @@ onBeforeUnmount(() => {
 .picker-subtitle {
   font-size: 12px;
   color: #94a3b8;
+}
+
+.picker-scroll {
+  position: relative;
+  max-height: min(68vh, 640px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 .picker-list :deep(.ant-list-items) {
@@ -397,7 +415,22 @@ onBeforeUnmount(() => {
 .picker-more {
   display: flex;
   justify-content: center;
-  padding-top: 4px;
+  padding: 4px 0 2px;
+}
+
+:global(.picker-back-top .ant-float-btn) {
+  width: 42px;
+  height: 42px;
+}
+
+:global(.picker-back-top .ant-float-btn-icon),
+:global(.picker-back-top .ant-float-btn-content),
+:global(.picker-back-top .anticon) {
+  color: var(--brand-color) !important;
+}
+
+:global(.picker-back-top svg) {
+  fill: var(--brand-color) !important;
 }
 
 @media (max-width: 760px) {
