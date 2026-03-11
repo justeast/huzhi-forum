@@ -40,6 +40,7 @@ const handleHeaderSearch = () => {
 const APP_HEADER_HEIGHT = 64;
 
 const questionId = computed(() => String(route.params?.id || ""));
+const routeCompose = computed(() => String(route.query?.compose || "").trim());
 const routeAnswerId = computed(() => String(route.query?.answer || "").trim());
 const routeCommentId = computed(() => String(route.query?.comment || "").trim());
 const routeParentCommentId = computed(() => String(route.query?.parent || "").trim());
@@ -97,6 +98,7 @@ const composerRef = ref(null);
 const answerFeedRef = ref(null);
 const hasAnswerDraft = ref(false);
 const routeLocateKey = ref("");
+const composeRouteKey = ref("");
 const locatingFromRoute = ref(false);
 
 const readAnswerDraftFlag = (qid) => {
@@ -136,6 +138,13 @@ const clearLocateQuery = async () => {
   delete nextQuery.answer;
   delete nextQuery.comment;
   delete nextQuery.parent;
+  await router.replace({ path: route.path, query: nextQuery });
+};
+
+const clearComposeQuery = async () => {
+  if (!routeCompose.value) return;
+  const nextQuery = { ...(route.query || {}) };
+  delete nextQuery.compose;
   await router.replace({ path: route.path, query: nextQuery });
 };
 
@@ -703,6 +712,7 @@ watch(
   questionId,
   (id) => {
     routeLocateKey.value = "";
+    composeRouteKey.value = "";
     locatingFromRoute.value = false;
     if (!id) return;
     loadQuestionAndAnswers(id);
@@ -786,6 +796,24 @@ watch(
     if (!routeAnswerId.value) return;
     if (questionLoading.value || answerLoading.value) return;
     await locateTargetFromRoute();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => [questionId.value, routeCompose.value, questionLoading.value].join("|"),
+  async () => {
+    if (!questionId.value) return;
+    if (!routeCompose.value) return;
+    if (questionLoading.value) return;
+
+    const key = `${questionId.value}|${routeCompose.value}`;
+    if (composeRouteKey.value === key) return;
+    composeRouteKey.value = key;
+
+    await nextTick();
+    openComposerAndScroll();
+    await clearComposeQuery();
   },
   { immediate: true },
 );

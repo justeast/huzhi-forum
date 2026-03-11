@@ -18,6 +18,7 @@ import { useChatStore } from "../stores/chat";
 import { useNotificationStore } from "../stores/notification";
 import AskQuestionModal from "./AskQuestionModal.vue";
 import ChangePasswordModal from "./ChangePasswordModal.vue";
+import WriteAnswerPickerModal from "./WriteAnswerPickerModal.vue";
 
 const props = defineProps({
   modelValue: { type: String, default: "" },
@@ -34,6 +35,7 @@ const { totalUnread } = storeToRefs(chatStore);
 const { unreadCount } = storeToRefs(notificationStore);
 
 const askModalOpen = ref(false);
+const writeAnswerModalOpen = ref(false);
 const changePwdOpen = ref(false);
 
 const keyword = computed({
@@ -64,7 +66,8 @@ const handleCreateQuestion = () => {
 };
 
 const handleWriteAnswer = () => {
-  message.info("写回答功能开发中");
+  if (!ensureLoggedIn()) return;
+  writeAnswerModalOpen.value = true;
 };
 
 const handleGotoHome = () => {
@@ -193,6 +196,7 @@ const handleOpenChatDrawer = () => {
   </header>
 
   <AskQuestionModal v-model:open="askModalOpen" />
+  <WriteAnswerPickerModal v-model:open="writeAnswerModalOpen" />
   <ChangePasswordModal v-model:open="changePwdOpen" />
 </template>
 
