@@ -1,5 +1,5 @@
 <script setup>
-import { onBeforeUnmount, reactive, ref } from "vue";
+import { nextTick, onBeforeUnmount, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { EyeOutlined } from "@ant-design/icons-vue";
 import { message } from "ant-design-vue";
@@ -76,10 +76,35 @@ onBeforeUnmount(() => {
   stopCodeCountdown();
 });
 
-// 切换到重置密码面板
-const openResetPanel = () => {
-  panelMode.value = "reset";
-  stopCodeCountdown();
+const blurActiveElement = () => {
+  const active = document.activeElement;
+  if (active && typeof active.blur === "function") {
+    active.blur();
+  }
+};
+
+const focusLoginAccount = async () => {
+  await nextTick();
+  document.getElementById("login-account")?.focus();
+};
+
+const resetLoginForm = () => {
+  loginForm.account = "";
+  loginForm.password = "";
+  loginForm.remember = false;
+  loginPwdVisible.value = false;
+};
+
+const resetRegisterForm = () => {
+  registerForm.username = "";
+  registerForm.email = "";
+  registerForm.password = "";
+  registerForm.confirmPassword = "";
+  registerPwdVisible.value = false;
+  registerConfirmVisible.value = false;
+};
+
+const resetResetForm = () => {
   resetForm.email = "";
   resetForm.code = "";
   resetForm.newPassword = "";
@@ -88,10 +113,20 @@ const openResetPanel = () => {
   resetConfirmVisible.value = false;
 };
 
-const backToLogin = () => {
+// 切换到重置密码面板
+const openResetPanel = () => {
+  panelMode.value = "reset";
+  stopCodeCountdown();
+  resetResetForm();
+};
+
+const backToLogin = async () => {
+  blurActiveElement();
   panelMode.value = "auth";
   activeTab.value = "login";
   stopCodeCountdown();
+  resetLoginForm();
+  await focusLoginAccount();
 };
 
 const handleSendResetCode = async () => {
@@ -131,7 +166,7 @@ const handleResetPassword = async () => {
       new_password: resetForm.newPassword,
     });
     message.success("密码重置成功");
-    backToLogin();
+    await backToLogin();
   } catch (error) {
     message.error(error?.message || "密码重置失败");
   } finally {
@@ -195,7 +230,11 @@ const handleRegister = async () => {
       password: registerForm.password,
     });
     message.success("注册成功");
+    resetRegisterForm();
+    resetLoginForm();
+    blurActiveElement();
     activeTab.value = "login";
+    await focusLoginAccount();
   } catch (error) {
     message.error(error?.message || "注册失败");
   } finally {

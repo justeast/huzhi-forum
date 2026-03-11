@@ -21,7 +21,7 @@ export const login = async (payload) => {
 export const register = async (payload) => {
   try {
     const res = await http.post("/user/register/", payload);
-    if (res?.status !== 200 || res?.data?.code !== 1) {
+    if (![200, 201].includes(Number(res?.status)) || res?.data?.code !== 1) {
       throw new Error(res?.data?.msg || "注册失败");
     }
     return res.data;
