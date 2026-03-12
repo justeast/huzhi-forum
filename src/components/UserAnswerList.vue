@@ -1,10 +1,10 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { CommentOutlined, LikeFilled } from "@ant-design/icons-vue";
+import { CommentOutlined, DeleteOutlined, EditOutlined, LikeFilled } from "@ant-design/icons-vue";
 import AnswerCommentSection from "./AnswerCommentSection.vue";
 import MarkdownCollapse from "./MarkdownCollapse.vue";
 import { VOTE_STATUS } from "../constants/vote";
-import { formatDateTimeMinute, formatCount } from "../utils/format";
+import { formatCreatedModifiedLabel, formatCount } from "../utils/format";
 
 const props = defineProps({
   answers: { type: Array, default: () => [] },
@@ -13,9 +13,11 @@ const props = defineProps({
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无回答" },
   voteLoadingMap: { type: Object, default: () => ({}) },
+  showManageActions: { type: Boolean, default: false },
+  deletingId: { type: String, default: "" },
 });
 
-const emit = defineEmits(["load-more", "item-click", "vote"]);
+const emit = defineEmits(["load-more", "item-click", "vote", "edit", "delete"]);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -84,6 +86,16 @@ const handleVote = (item) => {
   emit("vote", item);
 };
 
+const handleEdit = (item) => {
+  emit("edit", item);
+};
+
+const handleDelete = (item) => {
+  emit("delete", item);
+};
+
+const isDeleting = (id) => String(props.deletingId || "") === String(id || "");
+
 const handleToggleComment = (item) => {
   const id = item?.id;
   if (!id) return;
@@ -119,7 +131,28 @@ const handleExpandedChange = (item, value) => {
           tabindex="0"
           @click="handleClickItem(item)"
         >
-          <div class="title">{{ item?.question?.title }}</div>
+          <div class="head">
+            <div class="title">{{ item?.question?.title }}</div>
+
+            <div v-if="showManageActions" class="manage-actions" @click.stop>
+              <button class="manage-btn" type="button" @click.stop="handleEdit(item)">
+                <EditOutlined />
+                <span>编辑</span>
+              </button>
+
+              <a-popconfirm
+                title="确认删除这条回答吗？"
+                ok-text="删除"
+                cancel-text="取消"
+                @confirm="handleDelete(item)"
+              >
+                <button class="manage-btn danger" type="button" :disabled="isDeleting(item?.id)">
+                  <DeleteOutlined />
+                  <span>{{ isDeleting(item?.id) ? "删除中" : "删除" }}</span>
+                </button>
+              </a-popconfirm>
+            </div>
+          </div>
 
           <div class="content">
             <MarkdownCollapse
@@ -190,7 +223,7 @@ const handleExpandedChange = (item, value) => {
             </div>
 
             <div class="time">
-              {{ formatDateTimeMinute(item?.created) }}
+              {{ formatCreatedModifiedLabel(item?.created, item?.modified) }}
             </div>
           </div>
 
@@ -248,12 +281,55 @@ const handleExpandedChange = (item, value) => {
   background: rgba(120, 200, 65, 0.06);
 }
 
+.head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+
 .title {
-  margin: 0 0 10px;
+  margin: 0;
   font-size: 20px;
   font-weight: 800;
   color: #111827;
   transition: color 0.18s ease;
+  flex: 1;
+  min-width: 0;
+}
+
+.manage-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: none;
+}
+
+.manage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.manage-btn:hover {
+  color: var(--brand-color);
+}
+
+.manage-btn.danger:hover {
+  color: #ef4444;
+}
+
+.manage-btn:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
 }
 
 .row:hover .title {

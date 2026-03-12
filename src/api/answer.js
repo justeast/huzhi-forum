@@ -77,3 +77,35 @@ export const createAnswer = async (payload = {}) => {
 
   return res.data.data;
 };
+
+// 修改回答（PATCH /answer/{answer_id}/）
+// payload: { content: string }
+export const updateAnswer = async (answerId, payload = {}) => {
+  const id = String(answerId || "").trim();
+  const content = String(payload?.content || "");
+
+  if (!id) throw new Error("缺少回答ID");
+  if (!content.trim()) throw new Error("回答内容不能为空");
+
+  const res = await http.patch(`/answer/${id}/`, {
+    content,
+  });
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "修改回答失败");
+  }
+
+  return res.data.data;
+};
+
+// 删除回答（DELETE /answer/{answer_id}/）
+export const deleteAnswer = async (answerId) => {
+  const id = String(answerId || "").trim();
+  if (!id) throw new Error("缺少回答ID");
+
+  const res = await http.delete(`/answer/${id}/`);
+
+  if (Number(res?.status) !== 204) {
+    throw new Error(res?.data?.msg || "删除回答失败");
+  }
+};

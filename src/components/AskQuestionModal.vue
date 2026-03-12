@@ -1,4 +1,4 @@
-<script setup>
+﻿<script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from "vue";
 import { message } from "ant-design-vue";
 import { useRouter } from "vue-router";
@@ -6,14 +6,17 @@ import { FileImageOutlined } from "@ant-design/icons-vue";
 import { MdEditor } from "md-editor-v3";
 import { useAuthStore } from "../stores/auth";
 import { fetchTopicList, createTopic } from "../api/topic";
-import { createQuestion } from "../api/question";
+import { createQuestion, updateQuestion } from "../api/question";
 import { uploadToCos } from "../utils/cosUploader";
 
 const props = defineProps({
   open: { type: Boolean, default: false },
+  mode: { type: String, default: "create" },
+  questionId: { type: String, default: "" },
+  initialData: { type: Object, default: () => null },
 });
 
-const emit = defineEmits(["update:open"]);
+const emit = defineEmits(["update:open", "submitted"]);
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -45,6 +48,18 @@ const topicSearchKeyword = ref("");
 const topicLabelMap = ref({});
 
 let topicSearchTimer = null;
+
+const isEditMode = computed(() => props.mode === "edit");
+const submitButtonText = computed(() => (isEditMode.value ? "保存修改" : "发布问题"));
+const rawInputPlaceholder = computed(() =>
+  isEditMode.value
+    ? "请输入问题标题"
+    : "写下你的问题，准确地描述问题更容易得到解答",
+);
+const titlePlaceholder = computed(() => (isEditMode.value ? "编辑问题标题" : "我的问题是..."));
+const contentPlaceholder = computed(() =>
+  isEditMode.value ? "编辑问题描述（可选）" : "补充问题背景、条件等（可选）",
+);
 
 const hasTitle = computed(() => Boolean(String(title.value || "").trim()));
 const visibleImages = computed(() =>
@@ -78,6 +93,42 @@ const selectedTopics = computed(() =>
 
 const close = () => {
   emit("update:open", false);
+};
+
+const extractImageUrls = (text) => {
+  const matches = String(text || "").matchAll(/!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g);
+  return Array.from(matches)
+    .map((item) => String(item?.[1] || "").trim())
+    .filter((item) => Boolean(item));
+};
+
+const buildExistingImageItems = (text) =>
+  extractImageUrls(text).map((url) => ({
+    id: `existing_${url}`,
+    cosUrl: url,
+    blobUrl: "",
+    status: "success",
+    progress: 100,
+    removed: false,
+  }));
+
+const applyInitialData = async () => {
+  const data = props.initialData || {};
+  title.value = String(data?.title || "");
+  content.value = String(data?.content || "");
+  rawDraft.value = "";
+  splitMode.value = true;
+
+  const topics = Array.isArray(data?.topics) ? data.topics : [];
+  selectedTopicIds.value = topics
+    .map((topic) => String(topic?.id || "").trim())
+    .filter((topicId) => Boolean(topicId));
+  setTopicLabelsFromList(topics);
+
+  imageItems.value = buildExistingImageItems(content.value);
+
+  await nextTick();
+  if (titleInputRef.value?.focus) titleInputRef.value.focus();
 };
 
 const reset = () => {
@@ -392,6 +443,7 @@ const enterSplitMode = async (text) => {
 };
 
 const maybeExitSplitMode = async () => {
+  if (isEditMode.value) return;
   if (!splitMode.value) return;
   const t = String(title.value || "").trim();
   const c = String(content.value || "").trim();
@@ -530,31 +582,38 @@ const handleSubmit = async () => {
     return;
   }
   if (imageUploadingCount.value > 0) {
-    message.info("图片上传中，请稍后再发布");
+    message.info(isEditMode.value ? "图片上传中，请稍后再保存" : "图片上传中，请稍后再发布");
     return;
   }
   if (hasImageErrors.value) {
-    message.info("存在上传失败的图片，请重试或删除后再发布");
+    message.info("存在上传失败的图片，请重试或删除后再继续");
     return;
   }
 
   submitting.value = true;
   try {
-    const created = await createQuestion({
+    const payload = {
       title: t,
       content: content.value || "",
       topic_ids: selectedTopicIds.value || [],
-    });
+    };
 
-    const id = created?.id;
-    if (!id) throw new Error("发布失败");
+    const result = isEditMode.value
+      ? await updateQuestion(props.questionId, payload)
+      : await createQuestion(payload);
 
-    message.success("发布成功");
+    const id = result?.id;
+    if (!id) throw new Error(isEditMode.value ? "保存失败" : "发布失败");
+
+    message.success(isEditMode.value ? "问题已更新" : "发布成功");
+    emit("submitted", result);
     close();
-    router.push(`/question/${id}`);
+    if (!isEditMode.value) {
+      router.push(`/question/${id}`);
+    }
   } catch (error) {
     if (error?.__handled401) return;
-    message.error(error?.message || "发布失败");
+    message.error(error?.message || (isEditMode.value ? "保存失败" : "发布失败"));
   } finally {
     submitting.value = false;
   }
@@ -574,6 +633,10 @@ watch(
   async (val) => {
     if (val) {
       reset();
+      if (isEditMode.value) {
+        await applyInitialData();
+        return;
+      }
       await nextTick();
       if (rawInputRef.value?.focus) rawInputRef.value.focus();
     } else {
@@ -584,6 +647,7 @@ watch(
 
 watch(rawDraft, async (val) => {
   if (!props.open) return;
+  if (isEditMode.value) return;
   if (splitMode.value) return;
   const trimmed = String(val || "").trim();
   if (!trimmed) return;
@@ -631,7 +695,7 @@ onBeforeUnmount(() => {
             v-model:value="rawDraft"
             :auto-size="{ minRows: 8, maxRows: 12 }"
             class="raw-input"
-            placeholder="写下你的问题，准确地描述问题更容易得到解答"
+            :placeholder="rawInputPlaceholder"
             allow-clear
             @keydown="handleRawKeydown"
           />
@@ -641,7 +705,7 @@ onBeforeUnmount(() => {
               ref="titleInputRef"
               v-model:value="title"
               class="title-input"
-              placeholder="我的问题?"
+              :placeholder="titlePlaceholder"
               allow-clear
             />
 
@@ -696,7 +760,7 @@ onBeforeUnmount(() => {
               :noHighlight="true"
               :noKatex="true"
               :noMermaid="true"
-              placeholder="补充问题背景、条件等（可选）"
+              :placeholder="contentPlaceholder"
               style="height: 280px"
             />
           </div>
@@ -809,7 +873,7 @@ onBeforeUnmount(() => {
             :disabled="!canSubmit"
             @click="handleSubmit"
           >
-            发布问题
+            {{ submitButtonText }}
           </a-button>
         </div>
       </div>
@@ -1096,3 +1160,4 @@ onBeforeUnmount(() => {
   gap: 10px;
 }
 </style>
+

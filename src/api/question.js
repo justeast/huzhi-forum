@@ -137,3 +137,46 @@ export const createQuestion = async (payload = {}) => {
 
   return res.data.data;
 };
+
+// 修改问题（PATCH /question/{question_id}/）
+// payload: { title?: string, content?: string, topic_ids?: string[] }
+export const updateQuestion = async (questionId, payload = {}) => {
+  const id = String(questionId || "").trim();
+  if (!id) throw new Error("缺少问题ID");
+
+  const body = {};
+
+  if (payload?.title !== undefined) {
+    const title = String(payload.title || "").trim();
+    if (!title) throw new Error("问题标题不能为空");
+    body.title = title;
+  }
+
+  if (payload?.content !== undefined) {
+    body.content = String(payload.content || "");
+  }
+
+  if (Array.isArray(payload?.topic_ids)) {
+    body.topic_ids = payload.topic_ids.filter((x) => Boolean(x));
+  }
+
+  const res = await http.patch(`/question/${id}/`, body);
+
+  if (res?.status !== 200 || res?.data?.code !== 1) {
+    throw new Error(res?.data?.msg || "修改问题失败");
+  }
+
+  return res.data.data;
+};
+
+// 删除问题（DELETE /question/{question_id}/）
+export const deleteQuestion = async (questionId) => {
+  const id = String(questionId || "").trim();
+  if (!id) throw new Error("缺少问题ID");
+
+  const res = await http.delete(`/question/${id}/`);
+
+  if (Number(res?.status) !== 204) {
+    throw new Error(res?.data?.msg || "删除问题失败");
+  }
+};

@@ -11,7 +11,7 @@ import {
 import AnswerCommentSection from "./AnswerCommentSection.vue";
 import MarkdownCollapse from "./MarkdownCollapse.vue";
 import { VOTE_STATUS } from "../constants/vote";
-import { formatCount, formatDateTimeMinute } from "../utils/format";
+import { formatCount, formatCreatedModifiedLabel } from "../utils/format";
 
 const props = defineProps({
   answers: { type: Array, default: () => [] },
@@ -231,7 +231,7 @@ defineExpose({
             </div>
 
             <div class="time">
-              {{ formatDateTimeMinute(item?.created) }}
+              {{ formatCreatedModifiedLabel(item?.created, item?.modified) }}
             </div>
           </div>
 

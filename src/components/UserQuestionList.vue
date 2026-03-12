@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { formatDateTimeMinute } from "../utils/format";
+import { EditOutlined, DeleteOutlined } from "@ant-design/icons-vue";
+import { formatCreatedModifiedLabel } from "../utils/format";
 
 const props = defineProps({
   questions: { type: Array, default: () => [] },
@@ -8,9 +9,11 @@ const props = defineProps({
   loadingMore: { type: Boolean, default: false },
   hasMore: { type: Boolean, default: false },
   emptyText: { type: String, default: "暂无提问" },
+  showManageActions: { type: Boolean, default: false },
+  deletingId: { type: String, default: "" },
 });
 
-const emit = defineEmits(["load-more", "item-click"]);
+const emit = defineEmits(["load-more", "item-click", "edit", "delete"]);
 
 const sentinelRef = ref(null);
 let observer = null;
@@ -62,6 +65,16 @@ const formatFollowTag = (value) => `${Math.max(0, Number(value || 0))} 人关注
 const handleClickItem = (item) => {
   emit("item-click", item);
 };
+
+const handleEdit = (item) => {
+  emit("edit", item);
+};
+
+const handleDelete = (item) => {
+  emit("delete", item);
+};
+
+const isDeleting = (id) => String(props.deletingId || "") === String(id || "");
 </script>
 
 <template>
@@ -85,7 +98,27 @@ const handleClickItem = (item) => {
               <span class="tag">{{ formatFollowTag(item?.follower_count) }}</span>
             </div>
           </div>
-          <div class="time">{{ formatDateTimeMinute(item?.created) }}</div>
+          <div class="right">
+            <div v-if="showManageActions" class="manage-actions" @click.stop>
+              <button class="manage-btn" type="button" @click.stop="handleEdit(item)">
+                <EditOutlined />
+                <span>编辑</span>
+              </button>
+
+              <a-popconfirm
+                title="确认删除这条提问吗？"
+                ok-text="删除"
+                cancel-text="取消"
+                @confirm="handleDelete(item)"
+              >
+                <button class="manage-btn danger" type="button" :disabled="isDeleting(item?.id)">
+                  <DeleteOutlined />
+                  <span>{{ isDeleting(item?.id) ? "删除中" : "删除" }}</span>
+                </button>
+              </a-popconfirm>
+            </div>
+            <div class="time">{{ formatCreatedModifiedLabel(item?.created, item?.modified) }}</div>
+          </div>
         </div>
       </div>
 
@@ -173,6 +206,46 @@ const handleClickItem = (item) => {
   background: rgba(120, 200, 65, 0.12);
   border-color: rgba(120, 200, 65, 0.22);
   color: var(--brand-color);
+}
+
+.right {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.manage-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.manage-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.manage-btn:hover {
+  color: var(--brand-color);
+}
+
+.manage-btn.danger:hover {
+  color: #ef4444;
+}
+
+.manage-btn:disabled {
+  color: #cbd5e1;
+  cursor: not-allowed;
 }
 
 .time {

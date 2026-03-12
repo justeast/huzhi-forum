@@ -20,6 +20,8 @@ import UserQuestionList from "../components/UserQuestionList.vue";
 import ProfileFollowUsersPanel from "../components/ProfileFollowUsersPanel.vue";
 import UserFollowList from "../components/UserFollowList.vue";
 import CollectionAnswerDrawer from "../components/CollectionAnswerDrawer.vue";
+import AskQuestionModal from "../components/AskQuestionModal.vue";
+import EditAnswerModal from "../components/EditAnswerModal.vue";
 import { useAuthStore } from "../stores/auth";
 import { useTopicFollowStore } from "../stores/topicFollow";
 import { useChatStore } from "../stores/chat";
@@ -33,8 +35,12 @@ import {
   patchUserProfile,
   toggleUserFollow,
 } from "../api/user";
-import { fetchUserAnswerList, voteAnswer } from "../api/answer";
-import { fetchFollowingQuestionList, fetchUserQuestionList } from "../api/question";
+import { deleteAnswer, fetchUserAnswerList, voteAnswer } from "../api/answer";
+import {
+  deleteQuestion,
+  fetchFollowingQuestionList,
+  fetchUserQuestionList,
+} from "../api/question";
 import { fetchFollowingTopics, toggleTopicFollow } from "../api/topic";
 import { uploadToCos } from "../utils/cosUploader";
 import {
@@ -161,6 +167,9 @@ const answerHasMore = ref(false);
 const answerLoading = ref(false);
 const answerLoadingMore = ref(false);
 const answerVoteLoadingMap = ref({});
+const editAnswerOpen = ref(false);
+const editingAnswer = ref(null);
+const deletingAnswerId = ref("");
 
 // 提问列表：展示“我提出的问题”
 const QUESTION_PAGE_SIZE = 10;
@@ -170,6 +179,9 @@ const userQuestionPage = ref(0);
 const userQuestionHasMore = ref(false);
 const userQuestionLoading = ref(false);
 const userQuestionLoadingMore = ref(false);
+const editQuestionOpen = ref(false);
+const editingQuestion = ref(null);
+const deletingQuestionId = ref("");
 
 // 关注-问题：仅展示标题 + 回答数，支持无限滚动加载更多
 const FOLLOW_QUESTION_PAGE_SIZE = 10;
@@ -714,6 +726,161 @@ const handleClickUserQuestionItem = (item) => {
   const id = item?.id;
   if (!id) return;
   router.push(`/question/${id}`);
+};
+
+const applyQuestionPatchToProfile = (updated) => {
+  const questionId = String(updated?.id || "").trim();
+  if (!questionId) return;
+
+  userQuestionList.value = (userQuestionList.value || []).map((item) =>
+    String(item?.id || "") === questionId ? { ...item, ...updated } : item,
+  );
+
+  followQuestionList.value = (followQuestionList.value || []).map((item) =>
+    String(item?.id || "") === questionId ? { ...item, ...updated } : item,
+  );
+
+  answerList.value = (answerList.value || []).map((item) => {
+    if (String(item?.question?.id || "") !== questionId) return item;
+    return {
+      ...item,
+      question: {
+        ...(item?.question || {}),
+        id: questionId,
+        title: updated?.title ?? item?.question?.title,
+      },
+    };
+  });
+};
+
+const removeQuestionFromProfile = (questionId) => {
+  const id = String(questionId || "").trim();
+  if (!id) return;
+
+  const prevQuestionLength = (userQuestionList.value || []).length;
+  userQuestionList.value = (userQuestionList.value || []).filter(
+    (item) => String(item?.id || "") !== id,
+  );
+  if (userQuestionCount.value !== null && prevQuestionLength !== userQuestionList.value.length) {
+    userQuestionCount.value = Math.max(0, Number(userQuestionCount.value || 0) - 1);
+  }
+
+  followQuestionList.value = (followQuestionList.value || []).filter(
+    (item) => String(item?.id || "") !== id,
+  );
+
+  const prevAnswerLength = (answerList.value || []).length;
+  answerList.value = (answerList.value || []).filter(
+    (item) => String(item?.question?.id || "") !== id,
+  );
+  const removedAnswers = prevAnswerLength - answerList.value.length;
+  if (answerCount.value !== null && removedAnswers > 0) {
+    answerCount.value = Math.max(0, Number(answerCount.value || 0) - removedAnswers);
+  }
+};
+
+const applyAnswerPatchToProfile = (updated) => {
+  const answerId = String(updated?.id || "").trim();
+  if (!answerId) return;
+
+  answerList.value = (answerList.value || []).map((item) => {
+    if (String(item?.id || "") !== answerId) return item;
+    return {
+      ...item,
+      ...updated,
+      question: item?.question,
+    };
+  });
+};
+
+const removeAnswerFromProfile = (answerId) => {
+  const id = String(answerId || "").trim();
+  if (!id) return;
+
+  const prevLength = (answerList.value || []).length;
+  answerList.value = (answerList.value || []).filter((item) => String(item?.id || "") !== id);
+  if (answerCount.value !== null && prevLength !== answerList.value.length) {
+    answerCount.value = Math.max(0, Number(answerCount.value || 0) - 1);
+  }
+};
+
+const handleEditUserQuestion = (item) => {
+  if (!canEditProfile.value) return;
+  editingQuestion.value = item ? { ...item } : null;
+  editQuestionOpen.value = Boolean(editingQuestion.value?.id);
+};
+
+const handleQuestionUpdated = (updated) => {
+  if (!updated?.id) return;
+  applyQuestionPatchToProfile(updated);
+  editingQuestion.value = updated;
+};
+
+const handleDeleteUserQuestion = async (item) => {
+  const id = String(item?.id || "").trim();
+  if (!id || deletingQuestionId.value === id) return;
+
+  deletingQuestionId.value = id;
+  try {
+    await deleteQuestion(id);
+    removeQuestionFromProfile(id);
+    if (String(editingQuestion.value?.id || "") === id) {
+      editQuestionOpen.value = false;
+      editingQuestion.value = null;
+    }
+    message.success("提问已删除");
+    loadUserAchievements();
+    loadCollections();
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "删除提问失败");
+  } finally {
+    deletingQuestionId.value = "";
+  }
+};
+
+const handleEditUserAnswer = (item) => {
+  if (!canEditProfile.value) return;
+  editingAnswer.value = item
+    ? {
+        ...item,
+        question: item?.question ? { ...item.question } : null,
+      }
+    : null;
+  editAnswerOpen.value = Boolean(editingAnswer.value?.id);
+};
+
+const handleAnswerUpdated = (updated) => {
+  if (!updated?.id) return;
+  applyAnswerPatchToProfile(updated);
+  editingAnswer.value = {
+    ...(editingAnswer.value || {}),
+    ...updated,
+    question: editingAnswer.value?.question,
+  };
+};
+
+const handleDeleteUserAnswer = async (item) => {
+  const id = String(item?.id || "").trim();
+  if (!id || deletingAnswerId.value === id) return;
+
+  deletingAnswerId.value = id;
+  try {
+    await deleteAnswer(id);
+    removeAnswerFromProfile(id);
+    if (String(editingAnswer.value?.id || "") === id) {
+      editAnswerOpen.value = false;
+      editingAnswer.value = null;
+    }
+    message.success("回答已删除");
+    loadUserAchievements();
+    loadCollections();
+  } catch (error) {
+    if (error?.__handled401 || error?.response?.status === 401) return;
+    message.error(error?.message || "删除回答失败");
+  } finally {
+    deletingAnswerId.value = "";
+  }
 };
 
 // 资料展示/编辑数据：首屏用本地登录态兜底，页面挂载后从接口拉取并覆盖
@@ -1436,6 +1603,9 @@ const resetStateForTargetUser = () => {
   answerLoading.value = false;
   answerLoadingMore.value = false;
   answerVoteLoadingMap.value = {};
+  editAnswerOpen.value = false;
+  editingAnswer.value = null;
+  deletingAnswerId.value = "";
 
   userQuestionCount.value = null;
   userQuestionList.value = [];
@@ -1443,6 +1613,9 @@ const resetStateForTargetUser = () => {
   userQuestionHasMore.value = false;
   userQuestionLoading.value = false;
   userQuestionLoadingMore.value = false;
+  editQuestionOpen.value = false;
+  editingQuestion.value = null;
+  deletingQuestionId.value = "";
 
   followQuestionList.value = [];
   followQuestionPage.value = 0;
@@ -1699,9 +1872,13 @@ watch(
                   :loadingMore="answerLoadingMore"
                   :hasMore="answerHasMore"
                   :voteLoadingMap="answerVoteLoadingMap"
+                  :showManageActions="canEditProfile"
+                  :deletingId="deletingAnswerId"
                   emptyText="暂无回答"
                   @load-more="handleLoadMoreAnswers"
                   @vote="handleVoteUserAnswer"
+                  @edit="handleEditUserAnswer"
+                  @delete="handleDeleteUserAnswer"
                   @item-click="handleClickAnswerItem"
                 />
               </div>
@@ -1712,8 +1889,12 @@ watch(
                   :loading="userQuestionLoading"
                   :loadingMore="userQuestionLoadingMore"
                   :hasMore="userQuestionHasMore"
+                  :showManageActions="canEditProfile"
+                  :deletingId="deletingQuestionId"
                   emptyText="暂无提问"
                   @load-more="handleLoadMoreUserQuestions"
+                  @edit="handleEditUserQuestion"
+                  @delete="handleDeleteUserQuestion"
                   @item-click="handleClickUserQuestionItem"
                 />
               </div>
@@ -2078,6 +2259,22 @@ watch(
           </a-form-item>
         </a-form>
       </a-modal>
+
+      <AskQuestionModal
+        v-model:open="editQuestionOpen"
+        mode="edit"
+        :questionId="editingQuestion?.id || ''"
+        :initialData="editingQuestion"
+        @submitted="handleQuestionUpdated"
+      />
+
+      <EditAnswerModal
+        v-model:open="editAnswerOpen"
+        :answerId="editingAnswer?.id || ''"
+        :initialContent="editingAnswer?.content || ''"
+        :questionTitle="editingAnswer?.question?.title || ''"
+        @submitted="handleAnswerUpdated"
+      />
     </template>
   </div>
 </template>
