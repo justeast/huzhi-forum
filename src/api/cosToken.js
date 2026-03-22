@@ -1,7 +1,7 @@
 import axios from "axios";
 
 // 获取 COS 临时密钥
-const TOKEN_URL = "http://47.76.51.147:8013/api/upload/token/";
+const TOKEN_URL = "http://8.138.116.185:8013/api/upload/token/";
 
 /**
  * 向后端请求 COS 临时密钥
