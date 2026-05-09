@@ -29,10 +29,7 @@ const {
   markingAll,
 } = storeToRefs(notificationStore);
 
-const titleText = computed(() => {
-  const unread = Math.max(0, Number(unreadCount.value || 0));
-  return unread > 0 ? `通知（${unread} 未读）` : "通知";
-});
+const notificationUnread = computed(() => Math.max(0, Number(unreadCount.value || 0)));
 
 const getAvatar = (item) => item?.actor?.avatar || "/default-avatar.png";
 
@@ -143,22 +140,26 @@ watch(
   <a-drawer
     :open="drawerOpen"
     :width="420"
-    title=""
     placement="right"
     @close="handleClose"
   >
     <template #title>
-      <div class="drawer-head">
-        <div class="drawer-title">{{ titleText }}</div>
-        <a-button
-          type="link"
-          class="read-all-btn"
-          :loading="markingAll"
-          @click="handleMarkAllRead"
-        >
-          全部已读
-        </a-button>
+      <div class="drawer-title">
+        <span>通知</span>
+        <span v-if="notificationUnread > 0" class="title-unread">未读 {{ notificationUnread }}</span>
       </div>
+    </template>
+
+    <template #extra>
+      <a-button
+        type="link"
+        class="read-all-btn"
+        :disabled="unreadCount <= 0"
+        :loading="markingAll"
+        @click="handleMarkAllRead"
+      >
+        全部已读
+      </a-button>
     </template>
 
     <div class="notification-drawer">
@@ -218,17 +219,24 @@ watch(
 </template>
 
 <style scoped>
-.drawer-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
 .drawer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   font-size: 18px;
   font-weight: 900;
   color: #111827;
+}
+
+.title-unread {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(120, 200, 65, 0.12);
+  border: 1px solid rgba(120, 200, 65, 0.22);
+  color: var(--brand-color);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 900;
 }
 
 .read-all-btn {
